@@ -417,6 +417,9 @@
             .shift-section { border: 1px solid #ccc !important; box-shadow: none !important; }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
+        
+        .locked { opacity: 0.6; cursor: not-allowed !important; pointer-events: none; filter: grayscale(0.8); position: relative; }
+        .btn-locked { opacity: 0.6; cursor: not-allowed !important; pointer-events: none; background-color: #94a3b8 !important; border-color: #cbd5e1 !important; color: white !important; }
 
         /* Admin Tiles - Professional Look */
 
@@ -449,6 +452,8 @@
             <div class="title-section"><h1 id="mainTitle" onclick="goHome()" style="cursor: pointer;">Weekly Schedule</h1></div>
             <div id="currentTabTitle" style="position: absolute; left: 50%; transform: translateX(-50%); font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">HOME</div>
             <div style="display:flex; align-items:center; gap:15px;">
+                <button id="loginBtn" class="btn btn-secondary btn-sm" onclick="showLoginModal()">Login</button>
+                <button id="saveBtn" class="btn btn-success btn-sm" onclick="saveToFirebase()">Save Changes</button>
                 <button id="headerPrintBtn" class="btn btn-primary btn-sm hidden" onclick="promptPrint('calendarContainer', 'Schedule Calendar')">Print Schedule</button>
                 <button class="btn btn-secondary btn-sm" onclick="goHome()">Home</button>
                 <div class="date-display"><span id="currentDate"></span></div>
@@ -487,14 +492,9 @@
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
-        // This sends a tiny piece of data to Firebase as soon as the page loads
-db.ref('connection_test').set({
-    message: "Cloud Connection Successful!",
-    timestamp: new Date().toLocaleString()
-});
-        console.log("The Scheduler is awake!");
-console.log("Database variable:", db);
 
+        const ROLES = { OWNER: 'Owner', ADMIN: 'Admin', EMPLOYEE: 'Employee', GUEST: 'Guest' };
+        let currentUser = null; // { id, name, role, ... }
         // --- Constants ---
         const ASSIGNMENT_TYPES = { REGULAR: 'Regular Work Schedule', OVERTIME_V: 'Voluntary Overtime', OVERTIME_M: 'Mandatory Overtime', ON_CALL: 'On-Call Work Schedule', VACATION: 'Vacation', VACATION_SEGMENT: 'Vacation Segment', RDO: 'Regular Day Off', SCDO: 'Schedule Change Day Off', SDO: 'Scheduled Day Off', TRAINING: 'Training' };
         const OVERTIME_ASSIGNMENTS = [ASSIGNMENT_TYPES.OVERTIME_V, ASSIGNMENT_TYPES.OVERTIME_M];
@@ -554,6 +554,17 @@ console.log("Database variable:", db);
 
         function generateId() { return 'id_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9); }
         
+        function generateCredentials(name) {
+            const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            const username = cleanName + Math.floor(Math.random() * 1000);
+            const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
+            let password = "";
+            for (let i = 0; i < 12; i++) {
+                password += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return { username, password };
+        }
+
         // FIXED: Helper to create a LOCAL Date object from a YYYY-MM-DD string
         // This prevents the UTC timezone shift issue (offsetting dates by -1 day)
         function getLocalDateFromStr(dateStr) {
@@ -578,6 +589,7 @@ console.log("Database variable:", db);
         function getFullTimeEmployees() { const ftType = currentData.employeeTypes.find(t => t.name === 'Full-time'); if(!ftType) return []; return currentData.employees.filter(e => e.type === ftType.id && !e.archived); }
 
         window.onload = function() {
+            loadFromFirebase(); // Load data on startup
             if (globalData.locations.length === 0) { globalData.locations.push(new Location('Main Location')); }
             updateLocationUI();
             document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -589,6 +601,151 @@ console.log("Database variable:", db);
             document.getElementById('smartHeader').addEventListener('mouseleave', () => { if (window.scrollY > 50) { document.getElementById('smartHeader').classList.add('hidden-header'); } });
         };
 
+        // --- Firebase Functions ---
+        function saveToFirebase() {
+            const btn = document.getElementById('saveBtn');
+            if(btn) btn.textContent = 'Saving...';
+            
+            db.ref('scheduleData').set(globalData)
+            .then(() => {
+                if(btn) btn.textContent = 'Save Changes';
+                alert('Data saved to cloud successfully!');
+            })
+            .catch((error) => {
+                if(btn) btn.textContent = 'Save Changes';
+                alert('Error saving data: ' + error.message);
+            });
+        }
+
+        function loadFromFirebase() {
+            const btn = document.getElementById('saveBtn');
+            if(btn) btn.textContent = 'Loading...';
+
+            db.ref('scheduleData').once('value').then((snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    globalData.locations = data.locations || [];
+                    globalData.currentLocation = data.currentLocation;
+                    globalData.settings = data.settings || { maxLocations: 20 };
+                    
+                    if (globalData.currentLocation) {
+                        const loc = globalData.locations.find(l => l.id === globalData.currentLocation);
+                        if (loc) currentData = loc.data;
+                    }
+                    updateLocationUI();
+                    if (!document.getElementById('home').classList.contains('hidden')) loadHome();
+                }
+                if(btn) btn.textContent = 'Save Changes';
+            }).catch((error) => {
+                if(btn) btn.textContent = 'Save Changes';
+                console.error("Firebase Load Error:", error);
+            });
+        }
+
+        // --- Account Management ---
+        function showMyAccountModal() {
+            if (!currentUser) return alert("Please login first.");
+            if (currentUser.id === 'master') return alert("Master account cannot be edited.");
+            
+            createModal('My Account', `
+                <div class="form-group"><label>Username</label><input type="text" value="${currentUser.username || ''}" disabled style="background:#f1f5f9; color:#64748b; cursor:not-allowed;"></div>
+                <div class="form-group"><label>Password</label><input type="text" id="myAccountPass" value="${currentUser.password || ''}"></div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="saveMyAccount()">Update Password</button>
+                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                </div>
+            `, '400px');
+        }
+
+        function saveMyAccount() {
+            const newPass = document.getElementById('myAccountPass').value;
+            if (!newPass) return alert("Password cannot be empty.");
+            
+            let empFound = false;
+            // Search all locations to find and update the user record
+            for (const loc of globalData.locations) {
+                const emp = loc.data.employees.find(e => e.id === currentUser.id);
+                if (emp) {
+                    emp.password = newPass;
+                    currentUser.password = newPass;
+                    empFound = true;
+                    // If this is the currently loaded location, ensure UI might reflect if needed (though password isn't shown)
+                }
+            }
+
+            if (empFound) {
+                alert("Password updated successfully.");
+                closeModal();
+            } else {
+                // Fallback if user is somehow not in globalData (e.g. master or glitch)
+                currentUser.password = newPass;
+                alert("Session password updated (Record not found in storage).");
+                closeModal();
+            }
+        }
+
+        // --- Login System ---
+        function showLoginModal() {
+            createModal('Login', `
+                <div class="form-group"><label>Username</label><input type="text" id="loginUser"></div>
+                <div class="form-group"><label>Password</label><input type="password" id="loginPass"></div>
+                <div class="action-buttons"><button class="btn btn-primary" onclick="performLogin()">Login</button></div>
+            `, '400px');
+        }
+
+        function performLogin() {
+            const u = document.getElementById('loginUser').value;
+            const p = document.getElementById('loginPass').value;
+            
+            // Master Admin Backdoor
+            if (u === 'admin' && p === 'admin') {
+                currentUser = { id: 'master', name: 'Master Admin', role: ROLES.OWNER };
+                updateLoginUI();
+                closeModal();
+                return;
+            }
+
+            let foundEmp = null;
+            let foundLocId = null;
+
+            // Search all locations for the user
+            for (const loc of globalData.locations) {
+                if (loc.archived) continue;
+                const emp = loc.data.employees.find(e => e.username === u && e.password === p && !e.archived);
+                if (emp) {
+                    foundEmp = emp;
+                    foundLocId = loc.id;
+                    break;
+                }
+            }
+
+            if (foundEmp) {
+                currentUser = { ...foundEmp, role: foundEmp.systemRole || ROLES.EMPLOYEE };
+                
+                // Determine target location: User's default -> Location found in -> Current Global
+                const targetLocId = foundEmp.defaultLocation || foundLocId;
+                const targetLoc = globalData.locations.find(l => l.id === targetLocId && !l.archived);
+                
+                if (targetLoc) {
+                    globalData.currentLocation = targetLoc.id;
+                    currentData = targetLoc.data;
+                    updateLocationUI();
+                }
+
+                updateLoginUI();
+                closeModal();
+                goHome();
+            } else {
+                alert('Invalid credentials');
+            }
+        }
+
+        function logout() { currentUser = null; updateLoginUI(); goHome(); }
+        function updateLoginUI() {
+            const btn = document.getElementById('loginBtn');
+            if (currentUser) { btn.textContent = `Logout (${currentUser.name})`; btn.onclick = logout; }
+            else { btn.textContent = 'Login'; btn.onclick = showLoginModal; }
+        }
 
 
         function goHome() {
@@ -601,16 +758,25 @@ console.log("Database variable:", db);
             loadHome();
         }
         function loadHome() {
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const lockAdmin = (role === ROLES.EMPLOYEE || role === ROLES.GUEST) ? 'locked' : '';
+            const lockRestricted = (role === ROLES.GUEST) ? 'locked' : '';
+
             const container = document.getElementById('home');
             var html = '<div class="home-container">';
             html += '<div class="location-selector-tile">';
-            html += '<h2>📍 Select Your Location</h2>';
+            html += '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;">';
+            html += '<div><h2 style="margin:0 0 10px 0;">📍 Select Your Location</h2>';
             html += '<select id="homeLocationSelect" onchange="switchLocationFromHome()" style="cursor: pointer;">';
             html += '<option value="">-- Select Location --</option>';
             globalData.locations.filter(l => !l.archived).forEach(l => {
                 html += '<option value="' + l.id + '" ' + (l.id === globalData.currentLocation ? 'selected' : '') + '>' + l.name + '</option>';
             });
-            html += '</select>';
+            html += '</select></div>';
+            if (currentUser) {
+                html += `<div style="display:flex; gap:10px; align-items:center;"><button class="btn btn-secondary" onclick="showMyAccountModal()">View Account</button><button class="btn btn-danger" onclick="logout()">Log Out</button></div>`;
+            }
+            html += '</div>';
             html += '</div>';
             html += '<div class="home-tiles-grid">';
             html += '<div class="home-tile" onclick="navigateToTab(\'calendar\')">';
@@ -625,15 +791,15 @@ console.log("Database variable:", db);
             html += '<div class="home-tile-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">⏰</div>';
             html += '<h3 class="home-tile-title">Weekly Hours</h3>';
             html += '</div>';
-            html += '<div class="home-tile" onclick="navigateToTab(\'overtime\')">';
+            html += `<div class="home-tile ${lockRestricted}" onclick="navigateToTab('overtime')">`;
             html += '<div class="home-tile-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">💼</div>';
             html += '<h3 class="home-tile-title">Overtime</h3>';
             html += '</div>';
-            html += '<div class="home-tile" onclick="navigateToTab(\'vacation\')">';
+            html += `<div class="home-tile ${lockRestricted}" onclick="navigateToTab('vacation')">`;
             html += '<div class="home-tile-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">🏖️</div>';
             html += '<h3 class="home-tile-title">Vacation Segments</h3>';
             html += '</div>';
-            html += '<div class="home-tile" onclick="showAdminPanel()">';
+            html += `<div class="home-tile ${lockAdmin}" onclick="showAdminPanel()">`;
             html += '<div class="home-tile-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">⚙️</div>';
             html += '<h3 class="home-tile-title">Admin Settings</h3>';
             html += '</div>';
@@ -715,7 +881,9 @@ console.log("Database variable:", db);
         function showArchiveModal(title, message, onConfirm, onCancel) { createModal(title, `<div style="padding:10px;"><p>${message}</p><div class="form-group"><label>Effective Archive Date (Remove assignments on and after this date):</label><input type="date" id="archiveDate" value="${getTodayDateString()}"></div><div class="action-buttons"><button class="btn btn-secondary" onclick="cancelArchive()">Cancel</button><button class="btn btn-danger" onclick="confirmArchive()">Archive</button></div></div>`, '450px'); window.confirmArchive = () => { const date = document.getElementById('archiveDate').value; closeModal(); onConfirm(date); }; window.cancelArchive = () => { closeModal(); if(onCancel) onCancel(); }; }
 
         function loadCalendar() {
-            document.getElementById('calendar').innerHTML = `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;"><button class="btn btn-secondary" onclick="goHome()">← Back to Home</button><div style="display:flex; align-items:center; gap: 15px;"><button class="btn btn-danger" onclick="clearAssignmentsForMonth()">Clear Month Log</button><div id="quickAssignButtonContainer"></div></div></div><div class="calendar-wrapper"><div class="calendar-main-content" id="calendarContainer"></div><div id="calendarActionsSidebar" class="calendar-actions-sidebar"></div></div>`;
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const lockClear = (role === ROLES.ADMIN || role === ROLES.EMPLOYEE || role === ROLES.GUEST) ? 'btn-locked' : '';
+            document.getElementById('calendar').innerHTML = `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;"><button class="btn btn-secondary" onclick="goHome()">← Back to Home</button><div style="display:flex; align-items:center; gap: 15px;"><button class="btn btn-danger ${lockClear}" onclick="clearAssignmentsForMonth()">Clear Month Log</button><div id="quickAssignButtonContainer"></div></div></div><div class="calendar-wrapper"><div class="calendar-main-content" id="calendarContainer"></div><div id="calendarActionsSidebar" class="calendar-actions-sidebar"></div></div>`;
             document.getElementById('calendarControls').innerHTML = `<div class="filter-section"><div class="filter-group"><label>View:</label><select id="calendarViewType" onchange="updateCalendarView()"><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="daily">Daily</option></select></div><div class="filter-group"><label>Shift:</label><select id="calendarShiftFilter" onchange="updateCalendarView()"><option value="">All Shifts</option></select></div><div class="filter-group"><label>Employee:</label><select id="calendarEmployeeFilter" onchange="updateCalendarView()"><option value="">All Employees</option></select></div><div class="filter-group"><label>Type:</label><select id="calendarTypeFilter" onchange="updateCalendarView()"><option value="all">All Assignments</option><option value="work">Work Assignments</option><option value="timeoff">Time Off Assignments</option></select></div></div><div class="calendar-nav"><button class="btn btn-secondary" onclick="prevCal()">←</button><div class="calendar-title-container"><span id="calendarPeriodLabel"></span></div><button class="btn btn-secondary" onclick="nextCal()">→</button><button class="btn btn-secondary" onclick="todayCal()">Today</button></div>`;
             updateCalendarFilters(); updateCalendarView();
         }
@@ -1037,6 +1205,11 @@ console.log("Database variable:", db);
         function addDragListeners() { document.querySelectorAll('.assignment-bubble, .draggable').forEach(el => { el.addEventListener('dragstart', e => { draggedElement = e.target; e.dataTransfer.effectAllowed = el.classList.contains('assignment-bubble') ? 'copy' : 'move'; }); }); document.querySelectorAll('.calendar-cell').forEach(cell => { cell.addEventListener('dragover', e => { e.preventDefault(); cell.classList.add('drag-over'); }); cell.addEventListener('dragleave', () => cell.classList.remove('drag-over')); cell.addEventListener('drop', handleDrop); }); }
         
         function handleDrop(e) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) {
+                e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drag-over');
+                return alert("View Only: You do not have permission to edit the schedule.");
+            }
             e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('drag-over'); 
             if (!draggedElement) return; 
             
@@ -1186,6 +1359,10 @@ console.log("Database variable:", db);
         }
         
         function showClickToAssignModal(schedId, date) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) {
+                return; // View only, no interaction
+            }
             // 1. Get ALL assignments for this slot
             let assignments;
             if (schedId && schedId !== 'null') {
@@ -1394,6 +1571,7 @@ console.log("Database variable:", db);
         
         // MODIFIED: Delete Assignment with Options
         function deleteAssignment(id) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
             const ass = currentData.assignments.find(a => a.id === id);
             if (!ass) return;
             
@@ -1407,11 +1585,11 @@ console.log("Database variable:", db);
                             <span style="display:block; font-weight:700; margin-bottom:2px;">Delete Only This Instance</span>
                             <span style="display:block; font-size:11px; font-weight:normal; color:#64748b;">Remove assignment for this date only.</span>
                         </button>
-                        <button class="btn btn-danger" style="justify-content:flex-start; text-align:left; padding:12px;" onclick="performDelete('${id}', 'future')">
+                        <button class="btn btn-danger ${role === ROLES.ADMIN ? 'btn-locked' : ''}" style="justify-content:flex-start; text-align:left; padding:12px;" onclick="performDelete('${id}', 'future')">
                             <span style="display:block; font-weight:700; margin-bottom:2px;">Delete This & All Future</span>
                             <span style="display:block; font-size:11px; font-weight:normal; color:#fee2e2;">Remove this and all future assignments for this employee on this schedule.</span>
                         </button>
-                        <button class="btn btn-warning" style="justify-content:flex-start; text-align:left; padding:12px;" onclick="performDelete('${id}', 'past')">
+                        <button class="btn btn-warning ${role === ROLES.ADMIN ? 'btn-locked' : ''}" style="justify-content:flex-start; text-align:left; padding:12px;" onclick="performDelete('${id}', 'past')">
                             <span style="display:block; font-weight:700; margin-bottom:2px;">Delete Past Range</span>
                             <span style="display:block; font-size:11px; font-weight:normal; color:white;">Remove assignments from a specific past date up to this date.</span>
                         </button>
@@ -1513,6 +1691,8 @@ console.log("Database variable:", db);
         function toggleRosterView(view) { document.getElementById('rosterActiveView').classList.toggle('hidden', view !== 'active'); document.getElementById('rosterArchivedView').classList.toggle('hidden', view !== 'archived'); const tabs = document.querySelectorAll('#roster .tab'); tabs.forEach(t => t.classList.remove('active')); if (view === 'active') tabs[0].classList.add('active'); if (view === 'archived') tabs[1].classList.add('active'); }
         function renderRosterTables() {
             const sort = document.getElementById('rosterSort')?.value || 'alpha'; const shiftFilter = document.getElementById('rosterShiftFilter')?.value; const typeFilter = document.getElementById('rosterTypeFilter')?.value;
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const canManageAccounts = (role === ROLES.OWNER || role === ROLES.ADMIN);
             let active = currentData.employees.filter(e => !e.archived);
             if (shiftFilter) active = active.filter(e => e.defaultShift === shiftFilter);
             if (typeFilter) active = active.filter(e => e.type === typeFilter);
@@ -1530,6 +1710,7 @@ console.log("Database variable:", db);
                     <td><input type="text" value="${e.rosterNote||''}" onchange="saveRosterNote('${e.id}', this.value)" placeholder="Add note..."></td>
                     <td>
                         <button class="action-bubble view" onclick="viewEmployeeSchedule('${e.id}')">View Schedule</button>
+                        ${canManageAccounts ? `<button class="action-bubble view" style="background:#f3e8ff; color:#6b21a8; border-color:#d8b4fe;" onclick="showEmployeeAccountModal('${e.id}')">Account</button>` : ''}
                         <button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>
                         <button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>
                     </td>
@@ -1697,6 +1878,7 @@ console.log("Database variable:", db);
         function restoreEmployee(id) { const e = currentData.employees.find(x => x.id === id); e.archived = false; e.archivedAt = null; renderRosterTables(); }
         
         function deleteEmployeePermanently(id) {
+            if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot permanently delete items.");
             showConfirmationModal('Delete Permanently?', 'This will permanently delete the employee record and ALL historical assignments. This cannot be undone.', () => {
                 // Remove from employees array
                 currentData.employees = currentData.employees.filter(e => e.id !== id);
@@ -1712,9 +1894,38 @@ console.log("Database variable:", db);
         }
 
         function editEmployee(id, fromAdmin = false) { const e = currentData.employees.find(x => x.id === id); if (!e) return; const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}" ${s.id === e.defaultShift ? 'selected' : ''}>${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}" ${t.id === e.type ? 'selected' : ''}>${t.name}</option>`).join(''); 
+            const roleOptions = Object.values(ROLES).map(r => `<option value="${r}" ${e.systemRole === r ? 'selected' : ''}>${r}</option>`).join('');
+            const roleSelect = fromAdmin ? `<div><label>System Role</label><select id="editEmpRole">${roleOptions}</select></div>` : '';
+            const locOptions = globalData.locations.filter(l => !l.archived).map(l => `<option value="${l.id}" ${l.id === e.defaultLocation ? 'selected' : ''}>${l.name}</option>`).join('');
             const cancelAction = fromAdmin ? "loadAdminSection('employee', 'activeEmployees')" : "closeModal()";
-            createModal('Edit Employee', `<div class="form-row"><div><label>Name</label><input type="text" id="editEmpName" value="${e.name}"></div><div><label>Seniority</label><input type="date" id="editEmpSeniority" value="${e.seniorityDate}"></div></div><div class="form-row"><div><label>Type</label><select id="editEmpType">${typeOptions}</select></div><div><label>Default Shift</label><select id="editEmpShift">${shiftOptions}</select></div></div><div class="action-buttons"><button class="btn btn-primary" onclick="saveEmployeeChanges('${id}', ${fromAdmin})">Save Changes</button><button class="btn btn-secondary" onclick="${cancelAction}">Cancel</button></div>`); }
-        function saveEmployeeChanges(id, fromAdmin) { const e = currentData.employees.find(x => x.id === id); if (e) { e.name = document.getElementById('editEmpName').value; e.seniorityDate = document.getElementById('editEmpSeniority').value; e.type = document.getElementById('editEmpType').value; e.defaultShift = document.getElementById('editEmpShift').value; renderRosterTables(); if(fromAdmin) loadAdminSection('employee', 'activeEmployees'); else closeModal(); alert('Changes saved.'); } }
+            createModal('Edit Employee', `<div class="form-row"><div><label>Name</label><input type="text" id="editEmpName" value="${e.name}"></div><div><label>Seniority</label><input type="date" id="editEmpSeniority" value="${e.seniorityDate}"></div></div><div class="form-row"><div><label>Type</label><select id="editEmpType">${typeOptions}</select></div><div><label>Default Shift</label><select id="editEmpShift">${shiftOptions}</select></div></div><div class="form-row"><div><label>Default Location</label><select id="editEmpLocation">${locOptions}</select></div>${fromAdmin ? roleSelect : ''}</div><div class="action-buttons"><button class="btn btn-primary" onclick="saveEmployeeChanges('${id}', ${fromAdmin})">Save Changes</button><button class="btn btn-secondary" onclick="${cancelAction}">Cancel</button></div>`); }
+        function saveEmployeeChanges(id, fromAdmin) { const e = currentData.employees.find(x => x.id === id); if (e) { e.name = document.getElementById('editEmpName').value; e.seniorityDate = document.getElementById('editEmpSeniority').value; e.type = document.getElementById('editEmpType').value; e.defaultShift = document.getElementById('editEmpShift').value; e.defaultLocation = document.getElementById('editEmpLocation').value; if(fromAdmin) e.systemRole = document.getElementById('editEmpRole').value; renderRosterTables(); if(fromAdmin) loadAdminSection('employee', 'activeEmployees'); else closeModal(); alert('Changes saved.'); } }
+
+        function showEmployeeAccountModal(empId) {
+            const emp = currentData.employees.find(e => e.id === empId);
+            if (!emp) return;
+            
+            createModal(`Account: ${emp.name}`, `
+                <div class="form-group"><label>Username</label><input type="text" id="adminEmpUser" value="${emp.username || ''}"></div>
+                <div class="form-group"><label>Password</label><input type="text" id="adminEmpPass" value="${emp.password || ''}"></div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="saveEmployeeAccount('${empId}')">Save Credentials</button>
+                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                </div>
+            `, '400px');
+        }
+
+        function saveEmployeeAccount(empId) {
+            const u = document.getElementById('adminEmpUser').value;
+            const p = document.getElementById('adminEmpPass').value;
+            const emp = currentData.employees.find(e => e.id === empId);
+            if (emp) {
+                emp.username = u;
+                emp.password = p;
+                alert("Credentials updated.");
+                closeModal();
+            }
+        }
 
         // --- Overtime Shift Tabs ---
         function loadOvertime() { 
@@ -1751,12 +1962,14 @@ console.log("Database variable:", db);
 
         function loadOvertimeCalendar() {
             document.getElementById('currentTabTitle').textContent = 'Overtime Signup';
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const lockClear = (role === ROLES.ADMIN || role === ROLES.EMPLOYEE || role === ROLES.GUEST) ? 'btn-locked' : '';
             const container = document.getElementById('overtime'); 
             initializeOTCalendarShifts();
             container.innerHTML = `
                 <div style="display:flex; justify-content:flex-end; align-items:center; margin-bottom: 10px; gap: 10px;">
                     <button class="btn btn-secondary" onclick="showManageOvertimeCalendarShiftsModal()">Manage Shifts</button>
-                    <button class="btn btn-danger" onclick="clearOvertimeForMonth()">Clear Month Log</button>
+                    <button class="btn btn-danger ${lockClear}" onclick="clearOvertimeForMonth()">Clear Month Log</button>
                 </div>
                 <div id="otCalendarHeader" class="calendar-header" style="margin-bottom: 20px; display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; gap: 20px;">
                     <div>
@@ -1988,6 +2201,7 @@ console.log("Database variable:", db);
 
         // Single Shift Volunteers Modal
         function showOTVolunteersModal(shiftId, dateStr) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
             const shift = currentData.shifts.find(s => s.id === shiftId);
             
             // MODIFICATION: Removed the filter "&& s.status !== 'cancelled'" so cancelled items remain in the list
@@ -2060,6 +2274,7 @@ console.log("Database variable:", db);
 
                     const seniorityDisplay = emp.seniorityDate ? `<span style="font-size:11px; color:#64748b; font-weight:normal; margin-left:4px;">(${formatDate(emp.seniorityDate)})</span>` : '';
 
+                    const canApprove = (role === ROLES.OWNER || role === ROLES.ADMIN);
                     html += `<tr>
                         <td class="${nameClass}">${emp.name}${seniorityDisplay}</td>
                         <td>${detailsContent}</td>
@@ -2067,8 +2282,8 @@ console.log("Database variable:", db);
                         <td style="max-width:250px;">${logSummary}</td>
                         <td>
                             <div style="display:flex; gap:5px; flex-wrap:wrap;">
-                                ${isPending ? `<button class="btn btn-success btn-sm" onclick="approveOT('${s.id}', '${s.scheduleId}', '${dateStr}')">Approve</button>` : ''}
-                                ${isPending ? `<button class="btn btn-warning btn-sm" onclick="declineOT('${s.id}')">Decline</button>` : ''}
+                                ${isPending && canApprove ? `<button class="btn btn-success btn-sm" onclick="approveOT('${s.id}', '${s.scheduleId}', '${dateStr}')">Approve</button>` : ''}
+                                ${isPending && canApprove ? `<button class="btn btn-warning btn-sm" onclick="declineOT('${s.id}')">Decline</button>` : ''}
                                 ${!isCancelled && !isDeclined ? `<button class="btn btn-danger btn-sm" onclick="cancelOT('${s.id}')">Cancel</button>` : ''}
                             </div>
                         </td>
@@ -2274,6 +2489,11 @@ console.log("Database variable:", db);
         function cancelOT(id) { 
             const s = currentData.overtimeSignups.find(x=>x.id===id); 
             if(!s) return;
+
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE && currentUser.id !== s.employeeId) {
+                return alert("Access Denied: You can only cancel your own overtime signups.");
+            }
 
             showConfirmationModal('Cancel Signup?', 'Are you sure you want to cancel this overtime signup?', () => {
                 s.status = 'cancelled'; 
@@ -2741,6 +2961,8 @@ console.log("Database variable:", db);
         
         function loadVacation() { 
             const container = document.getElementById('vacation'); 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const lockClear = (role === ROLES.ADMIN || role === ROLES.EMPLOYEE || role === ROLES.GUEST) ? 'btn-locked' : '';
             const empFilterOptions = `<option value="">All Employees</option>` + currentData.employees.filter(e => !e.archived).map(e => `<option value="${e.id}">${e.name}</option>`).join('');
             container.innerHTML = `
                 <div id="vacationCalendarHeader" class="calendar-header" style="margin-bottom: 20px; display:grid; grid-template-columns: 1fr auto 1fr; align-items:center; gap: 20px;">
@@ -2761,7 +2983,7 @@ console.log("Database variable:", db);
                             <button class="btn btn-secondary" onclick="nextCalVac()">→</button>
                         </div>
                         <span id="vacationLabel" style="font-size: 18px; font-weight: 700; color: #2c3e50; min-width: 120px; text-align: center;"></span>
-                        <button class="btn btn-danger" onclick="clearVacationForMonth()">Clear Month Log</button>
+                        <button class="btn btn-danger ${lockClear}" onclick="clearVacationForMonth()">Clear Month Log</button>
                     </div>
                 </div>
                 <div id="vacationContainer" class="table-container"></div>`; 
@@ -2823,8 +3045,8 @@ console.log("Database variable:", db);
             html += `</div>`; 
             container.innerHTML = html; 
         }
-        function showManageVacationSchedulesModal() { const emps = currentData.employees.filter(e=>!e.archived).sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join(''); createModal('Manage Vacation', `<div class="form-row"><div><label>Employee</label><select id="vacEmp">${emps}</select></div><div><label>Start</label><input type="date" id="vacStart"></div><div><label>End</label><input type="date" id="vacEnd"></div></div><div class="action-buttons"><button class="btn btn-primary" onclick="addVacationSegment()">Add</button></div><hr><div id="vacList"></div>`); renderVacationList(); }
-        function renderVacationList() { const container = document.getElementById('vacList'); if(!container) return; let html = '<table><thead><tr><th>Employee</th><th>Start</th><th>End</th><th>Actions</th></tr></thead><tbody>'; currentData.vacationSchedules.forEach(v => { const emp = currentData.employees.find(e=>e.id===v.employeeId); if(emp) html += `<tr><td>${emp.name}</td><td>${v.startDate}</td><td>${v.endDate}</td><td><button class="action-bubble edit" onclick="editVacationSegment('${v.id}')">Edit</button><button class="action-bubble delete" onclick="deleteVacationSegment('${v.id}')">Delete</button></td></tr>`; }); html += '</tbody></table>'; container.innerHTML = html; }
+        function showManageVacationSchedulesModal() { const role = currentUser ? currentUser.role : ROLES.GUEST; const isReadOnly = (role === ROLES.EMPLOYEE || role === ROLES.GUEST); const emps = currentData.employees.filter(e=>!e.archived).sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join(''); createModal('Manage Vacation', `${isReadOnly ? '<p>View Only Mode</p>' : `<div class="form-row"><div><label>Employee</label><select id="vacEmp">${emps}</select></div><div><label>Start</label><input type="date" id="vacStart"></div><div><label>End</label><input type="date" id="vacEnd"></div></div><div class="action-buttons"><button class="btn btn-primary" onclick="addVacationSegment()">Add</button></div>`}<hr><div id="vacList"></div>`); renderVacationList(); }
+        function renderVacationList() { const role = currentUser ? currentUser.role : ROLES.GUEST; const isReadOnly = (role === ROLES.EMPLOYEE || role === ROLES.GUEST); const container = document.getElementById('vacList'); if(!container) return; let html = '<table><thead><tr><th>Employee</th><th>Start</th><th>End</th><th>Actions</th></tr></thead><tbody>'; currentData.vacationSchedules.forEach(v => { const emp = currentData.employees.find(e=>e.id===v.employeeId); if(emp) html += `<tr><td>${emp.name}</td><td>${v.startDate}</td><td>${v.endDate}</td><td>${isReadOnly ? 'View Only' : `<button class="action-bubble edit" onclick="editVacationSegment('${v.id}')">Edit</button><button class="action-bubble delete" onclick="deleteVacationSegment('${v.id}')">Delete</button>`}</td></tr>`; }); html += '</tbody></table>'; container.innerHTML = html; }
         
         function addVacationSegment() { const empId = document.getElementById('vacEmp').value; const start = document.getElementById('vacStart').value; const end = document.getElementById('vacEnd').value; if(!empId || !start || !end) return alert('Fields required'); const segId = generateId(); currentData.vacationSchedules.push({ id: segId, employeeId: empId, startDate: start, endDate: end }); generateVacationAssignments(segId, empId, start, end); renderVacationList(); updateVacationView(); }
         
@@ -2862,6 +3084,8 @@ console.log("Database variable:", db);
         }
 
         function editVacationSegment(id, isFromCalendar = false) {
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return; // Read only
             const seg = currentData.vacationSchedules.find(v => v.id === id);
             if (!seg) return;
             const emps = currentData.employees.filter(e => !e.archived).sort((a,b)=>a.name.localeCompare(b.name)).map(e => `<option value="${e.id}" ${e.id === seg.employeeId ? 'selected' : ''}>${e.name}</option>`).join('');
@@ -3050,10 +3274,38 @@ console.log("Database variable:", db);
 
         function showBulkAddEmployeeModal() { createModal('Bulk Add Employees', `<div id="bulkStep1"><div class="form-group"><label>Paste Names (One per line)</label><textarea id="bulkNames" rows="10" placeholder="John Doe\nJane Smith"></textarea></div><div class="action-buttons"><button class="btn btn-primary" onclick="renderBulkConfigTable()">Next: Configure Details</button></div></div><div id="bulkStep2" class="hidden"></div>`); }
         function renderBulkConfigTable() { const text = document.getElementById('bulkNames').value; const names = text.split('\n').map(n => n.trim()).filter(n => n); if (names.length === 0) return alert('Please enter at least one name.'); const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}">${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join(''); const today = getTodayDateString(); let html = `<div class="table-container" style="max-height: 60vh; overflow-y: auto;"><table><thead><tr><th>Name</th><th>Seniority</th><th>Type</th><th>Default Shift</th></tr></thead><tbody>`; names.forEach((name, idx) => { html += `<tr><td><input type="text" class="bulk-name" value="${name}"></td><td><input type="date" class="bulk-date" value="${today}"></td><td><select class="bulk-type">${typeOptions}</select></td><td><select class="bulk-shift">${shiftOptions}</select></td></tr>`; }); html += `</tbody></table></div><div class="action-buttons" style="margin-top: 20px;"><button class="btn btn-secondary" onclick="showBulkAddEmployeeModal()">Back</button><button class="btn btn-primary" onclick="saveBulkAddedEmployees()">Save All Employees</button></div>`; const step1 = document.getElementById('bulkStep1'); const step2 = document.getElementById('bulkStep2'); step1.classList.add('hidden'); step2.innerHTML = html; step2.classList.remove('hidden'); }
-        function saveBulkAddedEmployees() { const rows = document.querySelectorAll('#bulkStep2 tbody tr'); let count = 0; rows.forEach(row => { const name = row.querySelector('.bulk-name').value; const date = row.querySelector('.bulk-date').value; const type = row.querySelector('.bulk-type').value; const shift = row.querySelector('.bulk-shift').value; if (name) { currentData.employees.push({ id: generateId(), name: name, seniorityDate: date, type: type, defaultShift: shift, archived: false }); count++; } }); alert(`Successfully added ${count} employees.`); loadAdminSection('employee'); }
+        function saveBulkAddedEmployees() { 
+            const rows = document.querySelectorAll('#bulkStep2 tbody tr'); 
+            let count = 0; 
+            let credsLog = "Generated Credentials:\n";
+            rows.forEach(row => { 
+                const name = row.querySelector('.bulk-name').value; 
+                const date = row.querySelector('.bulk-date').value; 
+                const type = row.querySelector('.bulk-type').value; 
+                const shift = row.querySelector('.bulk-shift').value; 
+                if (name) { 
+                    const creds = generateCredentials(name);
+                    currentData.employees.push({ id: generateId(), name: name, seniorityDate: date, type: type, defaultShift: shift, archived: false, username: creds.username, password: creds.password, systemRole: ROLES.EMPLOYEE }); 
+                    credsLog += `${name}: ${creds.username} / ${creds.password}\n`;
+                    count++; 
+                } 
+            }); 
+            console.log(credsLog);
+            alert(`Successfully added ${count} employees.\n\nCredentials have been logged to the browser console (F12) for security.`); 
+            loadAdminSection('employee'); 
+        }
 
-        function loadAddEmployeeForm(containerId) { const container = document.getElementById(containerId); if(!container) return; const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}">${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join(''); container.innerHTML = `<h3>Add New Employee</h3><div class="form-row"><div><label>Name</label><input type="text" id="adminEmployeeName"></div><div><label>Seniority</label><input type="date" id="adminSeniorityDate" value="${getTodayDateString()}"></div></div><div class="form-row"><div><label>Type</label><select id="adminEmployeeType">${typeOptions}</select></div><div><label>Default Shift</label><select id="adminDefaultShift">${shiftOptions}</select></div></div><div class="action-buttons"><button class="btn btn-primary" onclick="addEmployee()">Add Employee</button></div>`; }
-        function addEmployee() { const name = document.getElementById('adminEmployeeName').value; if(!name) return alert('Name required'); currentData.employees.push({ id: generateId(), name, seniorityDate: document.getElementById('adminSeniorityDate').value, type: document.getElementById('adminEmployeeType').value, defaultShift: document.getElementById('adminDefaultShift').value, archived: false }); loadAdminSection('employee', 'activeEmployees'); }
+        function loadAddEmployeeForm(containerId) { const container = document.getElementById(containerId); if(!container) return; const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}">${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join(''); const roleOptions = Object.values(ROLES).map(r => `<option value="${r}">${r}</option>`).join(''); 
+            const locOptions = globalData.locations.filter(l => !l.archived).map(l => `<option value="${l.id}" ${l.id === globalData.currentLocation ? 'selected' : ''}>${l.name}</option>`).join('');
+            container.innerHTML = `<h3>Add New Employee</h3><div class="form-row"><div><label>Name</label><input type="text" id="adminEmployeeName"></div><div><label>Seniority</label><input type="date" id="adminSeniorityDate" value="${getTodayDateString()}"></div></div><div class="form-row"><div><label>Type</label><select id="adminEmployeeType">${typeOptions}</select></div><div><label>Default Shift</label><select id="adminDefaultShift">${shiftOptions}</select></div></div><div class="form-row"><div><label>System Role</label><select id="adminEmployeeRole">${roleOptions}</select></div><div><label>Default Location</label><select id="adminDefaultLocation">${locOptions}</select></div></div><div class="action-buttons"><button class="btn btn-primary" onclick="addEmployee()">Add Employee</button></div>`; }
+        function addEmployee() { 
+            const name = document.getElementById('adminEmployeeName').value; 
+            if(!name) return alert('Name required'); 
+            const creds = generateCredentials(name);
+            currentData.employees.push({ id: generateId(), name, seniorityDate: document.getElementById('adminSeniorityDate').value, type: document.getElementById('adminEmployeeType').value, defaultShift: document.getElementById('adminDefaultShift').value, archived: false, username: creds.username, password: creds.password, systemRole: document.getElementById('adminEmployeeRole').value, defaultLocation: document.getElementById('adminDefaultLocation').value }); 
+            alert(`Employee Added.\n\nAuto-Generated Credentials:\nUsername: ${creds.username}\nPassword: ${creds.password}\n\nPlease record these now.`);
+            loadAdminSection('employee', 'activeEmployees'); 
+        }
         function loadRosterAdmin(containerId) { const container = document.getElementById(containerId); if(!container) return; let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Seniority</th><th>Shift</th><th>Actions</th></tr></thead><tbody>`; currentData.employees.filter(e => !e.archived).sort((a,b) => new Date(a.seniorityDate) - new Date(b.seniorityDate)).forEach(e => { const s = currentData.shifts.find(x => x.id === e.defaultShift); html += `<tr><td>${e.name}</td><td>${formatDate(e.seniorityDate)}</td><td>${s ? s.name : 'N/A'}</td><td><button class="action-bubble edit" onclick="editEmployee('${e.id}', true)">Edit</button><button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button></td></tr>`; }); container.innerHTML = html + '</tbody></table></div>'; }
         function loadArchivedRosterAdmin(containerId) { const container = document.getElementById(containerId); if(!container) return; let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Archived</th><th>Actions</th></tr></thead><tbody>`; currentData.employees.filter(e => e.archived).forEach(e => { html += `<tr><td>${e.name}</td><td>${formatDate(e.archivedAt)}</td><td><button class="action-bubble restore" onclick="restoreEmployee('${e.id}')">Restore</button><button class="action-bubble delete" onclick="deleteEmployeePermanently('${e.id}')">Delete Permanently</button></td></tr>`; }); container.innerHTML = html + '</tbody></table></div>'; }
         function showManageEmployeeTypesModal() { isEmployeeTypeEditingUnlocked = false; let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;"><div class="action-buttons" style="margin:0;"><button class="btn btn-success" onclick="showAddEmployeeTypeInput()">+ Add Type</button></div><div><button class="icon-btn" id="unlockDefaultsBtn" onclick="toggleEmployeeTypeLock()" title="Unlock Default Types">🔒</button></div></div><div id="addTypeContainer"></div><div class="table-container"><table><thead><tr><th>Type Name</th><th>Actions</th></tr></thead><tbody>`; currentData.employeeTypes.forEach(t => { const isDefault = t.isDefault; const isLocked = isDefault && !isEmployeeTypeEditingUnlocked; html += `<tr><td><input type="text" id="type-name-${t.id}" value="${t.name}" ${isLocked ? 'disabled style="background:#f5f5f5; cursor:not-allowed; color:#888;"' : ''}></td><td>${isLocked ? '<span style="color:#888; font-size:12px; padding:5px;">Default (Locked)</span>' : `<button class="action-bubble edit" onclick="saveEmployeeTypeEdit('${t.id}')">Save</button><button class="action-bubble delete" onclick="deleteEmployeeType('${t.id}')">Delete</button>`}</td></tr>`; }); createModal('Manage Employee Types', html + '</tbody></table></div>'); }
@@ -3148,6 +3400,7 @@ console.log("Database variable:", db);
         function archiveShift(id) { showArchiveModal('Archive Shift', 'Enter effective archive date (removes assignments on and after this date):', (date) => { const s = currentData.shifts.find(x => x.id === id); s.archived = true; s.archivedAt = date; currentData.assignments = currentData.assignments.filter(a => { const sched = currentData.schedules.find(sc => sc.id === a.scheduleId); if(sched && sched.shiftId === id && a.date >= date) return false; return true; }); loadAdminSection('shift', 'activeShiftsTab'); refreshCurrentTab('calendar'); }); }
         function restoreShift(id) { const s = currentData.shifts.find(x => x.id === id); if(s) { s.archived = false; loadAdminSection('shift', 'archivedShiftsTab'); refreshCurrentTab('calendar'); } }
         function deleteShiftPermanently(id) {
+            if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot permanently delete items.");
             showConfirmationModal('Delete Permanently?', 'This will permanently delete this shift and ALL associated schedules and assignments. This cannot be undone.', () => {
                 currentData.shifts = currentData.shifts.filter(s => s.id !== id);
                 const schedIds = currentData.schedules.filter(s => s.shiftId === id).map(s => s.id);
@@ -3256,6 +3509,7 @@ console.log("Database variable:", db);
         function restoreSchedule(id) { const s = currentData.schedules.find(x => x.id === id); if(s) { s.archived = false; showManageSchedulesModal('archivedSched'); refreshCurrentTab('calendar'); } }
         
         function deleteSchedulePermanently(id) {
+            if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot permanently delete items.");
             showConfirmationModal('Delete Permanently?', 'This will remove the schedule and ALL associated assignments forever.', () => {
                 currentData.schedules = currentData.schedules.filter(s => s.id !== id);
                 currentData.assignments = currentData.assignments.filter(a => a.scheduleId !== id);
@@ -3267,6 +3521,8 @@ console.log("Database variable:", db);
 
         // --- LOCATION ---
         function showLocationManager() {
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.ADMIN) return alert("Admin Restricted: Cannot manage locations.");
             const activeLocations = globalData.locations.filter(l => !l.archived);
             const archivedLocations = globalData.locations.filter(l => l.archived);
             
@@ -3314,6 +3570,7 @@ console.log("Database variable:", db);
         function archiveLocation(id) { showConfirmationModal('Archive?', 'Archive this location?', () => { const l = globalData.locations.find(x=>x.id===id); l.archived=true; l.archivedAt=getTodayDateString(); showLocationManager(); updateLocationDropdown(); }); }
         function restoreLocation(id) { const l = globalData.locations.find(x=>x.id===id); l.archived=false; showLocationManager(); updateLocationDropdown(); }
         function deleteLocationPermanently(id) { 
+            if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot permanently delete items.");
             showConfirmationModal('Delete?', 'Permanently delete this location and all its data?', () => {
                 globalData.locations = globalData.locations.filter(l => l.id !== id);
                 showLocationManager();
@@ -3333,10 +3590,12 @@ console.log("Database variable:", db);
             closeModal(); 
         }
 
-        function editTitle() { if (!currentData) return alert('Please select a location first.'); createModal('Edit Title', `<div class="form-group"><label>New Title</label><input type="text" id="editTitleInput" value="${currentData.config.title}"></div><div class="action-buttons"><button class="btn btn-primary" onclick="confirmEditTitle()">Save</button><button class="btn btn-secondary" onclick="closeModal()">Cancel</button></div>`); }
+        function editTitle() { 
+            if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot edit title.");
+            if (!currentData) return alert('Please select a location first.'); 
+            createModal('Edit Title', `<div class="form-group"><label>New Title</label><input type="text" id="editTitleInput" value="${currentData.config.title}"></div><div class="action-buttons"><button class="btn btn-primary" onclick="confirmEditTitle()">Save</button><button class="btn btn-secondary" onclick="closeModal()">Cancel</button></div>`); 
+        }
         function confirmEditTitle() { const newTitle = document.getElementById('editTitleInput').value; if (newTitle) { currentData.config.title = newTitle; document.getElementById('mainTitle').textContent = newTitle; closeModal(); } }
 
     </script>
 </body>
-
-
