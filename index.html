@@ -470,7 +470,23 @@
     <div id="modalContainer"></div>
     <div id="floatingBarContainer"></div>
 
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
     <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyA77qciskztlJKiQUI0J4By3aX2D9B328k",
+          authDomain: "reentry-scheduler.firebaseapp.com",
+          databaseURL: "https://reentry-scheduler-default-rtdb.firebaseio.com",
+          projectId: "reentry-scheduler",
+          storageBucket: "reentry-scheduler.firebasestorage.app",
+          messagingSenderId: "562567578320",
+          appId: "1:562567578320:web:8839cba90d5bafad0554d5",
+          measurementId: "G-Z56QEFLPCB"
+        };
+        firebase.initializeApp(firebaseConfig);
+
         // --- Constants ---
         const ASSIGNMENT_TYPES = { REGULAR: 'Regular Work Schedule', OVERTIME_V: 'Voluntary Overtime', OVERTIME_M: 'Mandatory Overtime', ON_CALL: 'On-Call Work Schedule', VACATION: 'Vacation', VACATION_SEGMENT: 'Vacation Segment', RDO: 'Regular Day Off', SCDO: 'Schedule Change Day Off', SDO: 'Scheduled Day Off', TRAINING: 'Training' };
         const OVERTIME_ASSIGNMENTS = [ASSIGNMENT_TYPES.OVERTIME_V, ASSIGNMENT_TYPES.OVERTIME_M];
@@ -691,7 +707,7 @@
         function showArchiveModal(title, message, onConfirm, onCancel) { createModal(title, `<div style="padding:10px;"><p>${message}</p><div class="form-group"><label>Effective Archive Date (Remove assignments on and after this date):</label><input type="date" id="archiveDate" value="${getTodayDateString()}"></div><div class="action-buttons"><button class="btn btn-secondary" onclick="cancelArchive()">Cancel</button><button class="btn btn-danger" onclick="confirmArchive()">Archive</button></div></div>`, '450px'); window.confirmArchive = () => { const date = document.getElementById('archiveDate').value; closeModal(); onConfirm(date); }; window.cancelArchive = () => { closeModal(); if(onCancel) onCancel(); }; }
 
         function loadCalendar() {
-            document.getElementById('calendar').innerHTML = `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;"><div style="display:flex; align-items:center; gap: 15px;"><button class="btn btn-secondary" onclick="goHome()">← Back to Home</button><div id="quickAssignButtonContainer"></div></div><button class="btn btn-danger" onclick="clearAssignmentsForMonth()">Clear Month Log</button></div><div class="calendar-wrapper"><div class="calendar-main-content" id="calendarContainer"></div><div id="calendarActionsSidebar" class="calendar-actions-sidebar"></div></div>`;
+            document.getElementById('calendar').innerHTML = `<div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;"><button class="btn btn-secondary" onclick="goHome()">← Back to Home</button><div style="display:flex; align-items:center; gap: 15px;"><button class="btn btn-danger" onclick="clearAssignmentsForMonth()">Clear Month Log</button><div id="quickAssignButtonContainer"></div></div></div><div class="calendar-wrapper"><div class="calendar-main-content" id="calendarContainer"></div><div id="calendarActionsSidebar" class="calendar-actions-sidebar"></div></div>`;
             document.getElementById('calendarControls').innerHTML = `<div class="filter-section"><div class="filter-group"><label>View:</label><select id="calendarViewType" onchange="updateCalendarView()"><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="daily">Daily</option></select></div><div class="filter-group"><label>Shift:</label><select id="calendarShiftFilter" onchange="updateCalendarView()"><option value="">All Shifts</option></select></div><div class="filter-group"><label>Employee:</label><select id="calendarEmployeeFilter" onchange="updateCalendarView()"><option value="">All Employees</option></select></div><div class="filter-group"><label>Type:</label><select id="calendarTypeFilter" onchange="updateCalendarView()"><option value="all">All Assignments</option><option value="work">Work Assignments</option><option value="timeoff">Time Off Assignments</option></select></div></div><div class="calendar-nav"><button class="btn btn-secondary" onclick="prevCal()">←</button><div class="calendar-title-container"><span id="calendarPeriodLabel"></span></div><button class="btn btn-secondary" onclick="nextCal()">→</button><button class="btn btn-secondary" onclick="todayCal()">Today</button></div>`;
             updateCalendarFilters(); updateCalendarView();
         }
@@ -981,7 +997,7 @@
                 if (btnContainer) btnContainer.style.display = 'block';
             }
 
-            const emps = currentData.employees.filter(e => !e.archived).map(e => `<option value="${e.id}">${e.name}</option>`).join(''); 
+            const emps = currentData.employees.filter(e => !e.archived).sort((a,b)=>a.name.localeCompare(b.name)).map(e => `<option value="${e.id}">${e.name}</option>`).join(''); 
             let bubbles = '';
             Object.values(ASSIGNMENT_TYPES).forEach(type => { const color = getAssignmentColor(type); const contrast = getContrastColor(color); bubbles += `<div class="assignment-bubble" draggable="true" data-assignment-type="${type}" style="background:${color}; color:${contrast}" title="${type}">${type}</div>`; });
             
@@ -2820,7 +2836,13 @@
                     if (existing) schedId = existing.scheduleId;
                 }
 
-                applyAssignment(empId, schedId, iso, null, ASSIGNMENT_TYPES.VACATION_SEGMENT); 
+                if (schedId) {
+                    const sched = currentData.schedules.find(s => s.id === schedId);
+                    const dayOfWeek = dt.getDay();
+                    if (sched && sched.workDays && sched.workDays.includes(dayOfWeek)) {
+                        applyAssignment(empId, schedId, iso, null, ASSIGNMENT_TYPES.VACATION_SEGMENT); 
+                    }
+                }
                 currentData.vacationAssignments.push({ id: generateId(), segmentId: segId, employeeId: empId, date: iso }); 
             }
         }
