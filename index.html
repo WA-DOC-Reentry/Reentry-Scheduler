@@ -3457,7 +3457,6 @@
             saveToFirebase();
             loadAdminSection('employee', 'activeEmployees'); 
         }
-        function loadRosterAdmin(containerId) { const container = document.getElementById(containerId); if(!container) return; let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Seniority</th><th>Shift</th><th>Actions</th></tr></thead><tbody>`; currentData.employees.filter(e => !e.archived).sort((a,b) => new Date(a.seniorityDate) - new Date(b.seniorityDate)).forEach(e => { const s = currentData.shifts.find(x => x.id === e.defaultShift); html += `<tr><td>${e.name}</td><td>${formatDate(e.seniorityDate)}</td><td>${s ? s.name : 'N/A'}</td><td><button class="action-bubble edit" onclick="editEmployee('${e.id}', true)">Edit</button><button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button></td></tr>`; }); container.innerHTML = html + '</tbody></table></div>'; }
         function loadRosterAdmin(containerId) { 
             const container = document.getElementById(containerId); if(!container) return; 
             const role = currentUser ? currentUser.role : ROLES.GUEST;
