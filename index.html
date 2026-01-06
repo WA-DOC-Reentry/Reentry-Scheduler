@@ -2008,8 +2008,7 @@
         function editEmployee(id, fromAdmin = false) { 
             const role = currentUser ? currentUser.role : ROLES.GUEST;
             if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
-            const e = currentData.employees.find(x => x.id === id); if (!e) return; const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}" ${s.id === e.defaultShift ? 'selected' : ''}>${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}" ${t.id === e.type ? 'selected' : ''}>${t.name}</option>`).join(''); 
-            const e = currentData.employees.find(x => x.id === id); if (!e) return; 
+            const e = currentData.employees.find(x => x.id === id); if (!e) return;
             
             if (e.systemRole === ROLES.OWNER && role !== ROLES.OWNER) {
                 return alert("Access Denied: Only Owners can edit Owner accounts.");
