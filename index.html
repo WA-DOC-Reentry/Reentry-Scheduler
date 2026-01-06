@@ -556,8 +556,24 @@
         function generateId() { return 'id_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9); }
         
         function generateCredentials(name) {
-            const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-            const username = cleanName + Math.floor(Math.random() * 1000);
+            let firstName = "";
+            let lastName = "";
+            
+            if (name.includes(',')) {
+                const parts = name.split(',');
+                lastName = parts[0].trim();
+                firstName = parts.length > 1 ? parts[1].trim() : "";
+            } else {
+                const parts = name.trim().split(/\s+/);
+                if (parts.length > 0) {
+                    firstName = parts[0];
+                    lastName = parts.slice(1).join('');
+                }
+            }
+
+            let username = (firstName.length >= 2 ? firstName.substring(0, 2) : firstName) + lastName.replace(/\s+/g, '');
+            if (!username) username = "user" + Math.floor(Math.random() * 1000);
+
             const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
             let password = "";
             for (let i = 0; i < 12; i++) {
@@ -625,17 +641,17 @@
 
         // --- Firebase Functions ---
         function saveToFirebase() {
-            const btn = document.getElementById('saveBtn');
-            if(btn) btn.textContent = 'Saving...';
-            
-            db.ref('scheduleData').set(globalData)
+            // 1. Identify the DATA (Make sure this variable name matches your 3000-line code)
+            const dataToSync = globalData; 
+
+            // 2. Identify the LOCATION (This must match your Firebase folder name)
+            db.ref('scheduleData').set(dataToSync)
             .then(() => {
-                if(btn) btn.textContent = 'Save Changes';
-                alert('Data saved to cloud successfully!');
+                console.log("Success: Data is now in the Cloud!");
+                alert("Synced to Firebase successfully!");
             })
             .catch((error) => {
-                if(btn) btn.textContent = 'Save Changes';
-                alert('Error saving data: ' + error.message);
+                console.error("Cloud Save Failed:", error);
             });
         }
 
@@ -727,6 +743,7 @@
                 // Actually, let's just log to system as "User X changed password"
                 logAction('Password Change', 'User changed their own password');
                 alert("Password updated successfully.");
+                saveToFirebase();
                 closeModal();
             } else {
                 // Fallback if user is somehow not in globalData (e.g. master or glitch)
@@ -1783,6 +1800,8 @@
                         ${canManageAccounts && canViewThisAccount ? `<button class="action-bubble view" style="background:#f3e8ff; color:#6b21a8; border-color:#d8b4fe;" onclick="showEmployeeAccountModal('${e.id}')">Account</button>` : ''}
                         ${canEdit ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
                         ${canEdit ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
+                        ${canViewThisAccount ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
+                        ${canViewThisAccount ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
                     </td>
                 </tr>`; 
             }); 
@@ -1944,6 +1963,12 @@
         function archiveEmployee(id) { 
             const role = currentUser ? currentUser.role : ROLES.GUEST;
             if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
+            
+            const targetEmp = currentData.employees.find(x => x.id === id);
+            if (targetEmp && targetEmp.systemRole === ROLES.OWNER && role !== ROLES.OWNER) {
+                return alert("Access Denied: Only Owners can archive Owner accounts.");
+            }
+
             showArchiveModal('Archive Employee', '<strong>Warning:</strong> Archiving this employee will remove all their schedule assignments ON and AFTER the selected date.', (date) => { 
                 const e = currentData.employees.find(x => x.id === id); 
                 e.archived = true; 
@@ -1984,6 +2009,13 @@
             const role = currentUser ? currentUser.role : ROLES.GUEST;
             if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
             const e = currentData.employees.find(x => x.id === id); if (!e) return; const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}" ${s.id === e.defaultShift ? 'selected' : ''}>${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}" ${t.id === e.type ? 'selected' : ''}>${t.name}</option>`).join(''); 
+            const e = currentData.employees.find(x => x.id === id); if (!e) return; 
+            
+            if (e.systemRole === ROLES.OWNER && role !== ROLES.OWNER) {
+                return alert("Access Denied: Only Owners can edit Owner accounts.");
+            }
+            
+            const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}" ${s.id === e.defaultShift ? 'selected' : ''}>${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}" ${t.id === e.type ? 'selected' : ''}>${t.name}</option>`).join(''); 
             const roleOptions = Object.values(ROLES).map(r => `<option value="${r}" ${e.systemRole === r ? 'selected' : ''}>${r}</option>`).join('');
             const roleSelect = fromAdmin ? `<div><label>System Role</label><select id="editEmpRole">${roleOptions}</select></div>` : '';
             const locOptions = globalData.locations.filter(l => !l.archived).map(l => `<option value="${l.id}" ${l.id === e.defaultLocation ? 'selected' : ''}>${l.name}</option>`).join('');
@@ -2021,6 +2053,7 @@
                 emp.password = p;
                 logAction('Admin Password Change', `Changed credentials`, emp);
                 alert("Credentials updated.");
+                saveToFirebase();
                 closeModal();
             }
         }
@@ -3407,6 +3440,7 @@
             logAction('Bulk Add Employees', `Added ${count} employees via bulk tool`);
             console.log(credsLog);
             alert(`Successfully added ${count} employees.\n\nCredentials have been logged to the browser console (F12) for security.`); 
+            saveToFirebase();
             loadAdminSection('employee'); 
         }
 
@@ -3421,9 +3455,25 @@
             const newEmp = currentData.employees[currentData.employees.length-1];
             logAction('Add Employee', `Added new employee`, newEmp);
             alert(`Employee Added.\n\nAuto-Generated Credentials:\nUsername: ${creds.username}\nPassword: ${creds.password}\n\nPlease record these now.`);
+            saveToFirebase();
             loadAdminSection('employee', 'activeEmployees'); 
         }
         function loadRosterAdmin(containerId) { const container = document.getElementById(containerId); if(!container) return; let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Seniority</th><th>Shift</th><th>Actions</th></tr></thead><tbody>`; currentData.employees.filter(e => !e.archived).sort((a,b) => new Date(a.seniorityDate) - new Date(b.seniorityDate)).forEach(e => { const s = currentData.shifts.find(x => x.id === e.defaultShift); html += `<tr><td>${e.name}</td><td>${formatDate(e.seniorityDate)}</td><td>${s ? s.name : 'N/A'}</td><td><button class="action-bubble edit" onclick="editEmployee('${e.id}', true)">Edit</button><button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button></td></tr>`; }); container.innerHTML = html + '</tbody></table></div>'; }
+        function loadRosterAdmin(containerId) { 
+            const container = document.getElementById(containerId); if(!container) return; 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Seniority</th><th>Shift</th><th>Actions</th></tr></thead><tbody>`; 
+            currentData.employees.filter(e => !e.archived).sort((a,b) => new Date(a.seniorityDate) - new Date(b.seniorityDate)).forEach(e => { 
+                const s = currentData.shifts.find(x => x.id === e.defaultShift); 
+                const isTargetOwner = e.systemRole === ROLES.OWNER;
+                const canModifyTarget = (role === ROLES.OWNER) || (role === ROLES.ADMIN && !isTargetOwner);
+                html += `<tr><td>${e.name}</td><td>${formatDate(e.seniorityDate)}</td><td>${s ? s.name : 'N/A'}</td><td>
+                    ${canModifyTarget ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}', true)">Edit</button>` : ''}
+                    ${canModifyTarget ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
+                </td></tr>`; 
+            }); 
+            container.innerHTML = html + '</tbody></table></div>'; 
+        }
         function loadArchivedRosterAdmin(containerId) { const container = document.getElementById(containerId); if(!container) return; let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Archived</th><th>Actions</th></tr></thead><tbody>`; currentData.employees.filter(e => e.archived).forEach(e => { html += `<tr><td>${e.name}</td><td>${formatDate(e.archivedAt)}</td><td><button class="action-bubble restore" onclick="restoreEmployee('${e.id}')">Restore</button><button class="action-bubble delete" onclick="deleteEmployeePermanently('${e.id}', true)">Delete Permanently</button></td></tr>`; }); container.innerHTML = html + '</tbody></table></div>'; }
         function showManageEmployeeTypesModal() { isEmployeeTypeEditingUnlocked = false; let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;"><div class="action-buttons" style="margin:0;"><button class="btn btn-success" onclick="showAddEmployeeTypeInput()">+ Add Type</button></div><div><button class="icon-btn" id="unlockDefaultsBtn" onclick="toggleEmployeeTypeLock()" title="Unlock Default Types">🔒</button></div></div><div id="addTypeContainer"></div><div class="table-container"><table><thead><tr><th>Type Name</th><th>Actions</th></tr></thead><tbody>`; currentData.employeeTypes.forEach(t => { const isDefault = t.isDefault; const isLocked = isDefault && !isEmployeeTypeEditingUnlocked; html += `<tr><td><input type="text" id="type-name-${t.id}" value="${t.name}" ${isLocked ? 'disabled style="background:#f5f5f5; cursor:not-allowed; color:#888;"' : ''}></td><td>${isLocked ? '<span style="color:#888; font-size:12px; padding:5px;">Default (Locked)</span>' : `<button class="action-bubble edit" onclick="saveEmployeeTypeEdit('${t.id}')">Save</button><button class="action-bubble delete" onclick="deleteEmployeeType('${t.id}')">Delete</button>`}</td></tr>`; }); createModal('Manage Employee Types', html + '</tbody></table></div>'); }
         function toggleEmployeeTypeLock() { isEmployeeTypeEditingUnlocked = !isEmployeeTypeEditingUnlocked; showManageEmployeeTypesModal(); }
@@ -3770,7 +3820,7 @@
         function renderSystemLogsModal(filterType = 'All', searchTerm = '') {
             let logs = window.currentSystemLogs || [];
             const role = currentUser ? currentUser.role : ROLES.GUEST;
-            const canDelete = (role === ROLES.OWNER || role === ROLES.ADMIN);
+            const canDelete = (role === ROLES.OWNER);
             
             if (filterType !== 'All') {
                 logs = logs.filter(l => l.source === filterType);
@@ -3844,6 +3894,9 @@
         };
 
         function deleteLogEntry(timestamp, action) {
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role !== ROLES.OWNER) return alert("Access Denied: Only Owners can delete logs.");
+
             // Find the log in the current global list to get its parent reference
             const logItem = window.currentSystemLogs.find(l => l.timestamp === timestamp && l.action === action);
             if (logItem && logItem._parent) {
@@ -3856,6 +3909,9 @@
         }
 
         function clearFilteredLogs() {
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role !== ROLES.OWNER) return alert("Access Denied: Only Owners can delete logs.");
+
             if (!confirm("Are you sure you want to delete all currently listed logs? This cannot be undone.")) return;
             
             // Get current filter state to know what is being displayed
@@ -3882,14 +3938,6 @@
             logsToDelete.forEach(logItem => {
                 if (logItem._parent) {
                     const idx = logItem._parent.indexOf(logItem._ref);
-                    if (idx > -1) logItem._parent.splice(idx, 1);
-                }
-            });
-
-            showSystemLogs();
-        }
-    </script>
-</body>             const idx = logItem._parent.indexOf(logItem._ref);
                     if (idx > -1) logItem._parent.splice(idx, 1);
                 }
             });
