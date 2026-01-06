@@ -512,7 +512,7 @@
             { name: 'Slate', value: '#64748b' }
         ];
         
-        const globalData = { locations: [], currentLocation: null, settings: { maxLocations: 20 } };
+        const globalData = { locations: [], currentLocation: null, settings: { maxLocations: 20 }, logs: [] };
         let currentData = null;
         let currentCalendarDate = new Date();
         let calendarViewType = 'weekly';
@@ -544,7 +544,8 @@
                     assignments: [],
                     overtimeSignups: [], overtimeScratches: { voluntary: [], mandatory: [] }, overtimeLists: { voluntary: [], mandatory: [] }, overtimeNotes: {}, overtimeRefusals: {},
                     vacationSchedules: [], vacationAssignments: [], 
-                    employeeTypes: this.getDefaultEmployeeTypes(), 
+                    employeeTypes: this.getDefaultEmployeeTypes(),
+                    logs: [], 
                     config: { title: 'Weekly Schedule' }
                 };
             }
@@ -563,6 +564,27 @@
                 password += chars.charAt(Math.floor(Math.random() * chars.length));
             }
             return { username, password };
+        }
+
+        // --- Logging System ---
+        function logAction(action, details, target = null) {
+            const user = currentUser ? `${currentUser.name} (${currentUser.username})` : 'System/Guest';
+            const timestamp = new Date().toISOString();
+            const entry = { timestamp, user, action, details };
+            
+            if (target) {
+                if (!target.logs) target.logs = [];
+                target.logs.push(entry);
+            } else {
+                // Fallback to general log (Location level or Global level)
+                if (currentData) {
+                    if (!currentData.logs) currentData.logs = [];
+                    currentData.logs.push(entry);
+                } else {
+                     if (!globalData.logs) globalData.logs = [];
+                     globalData.logs.push(entry);
+                }
+            }
         }
 
         // FIXED: Helper to create a LOCAL Date object from a YYYY-MM-DD string
@@ -627,7 +649,33 @@
                     globalData.locations = data.locations || [];
                     globalData.currentLocation = data.currentLocation;
                     globalData.settings = data.settings || { maxLocations: 20 };
+                    globalData.logs = data.logs || [];
                     
+                    // Sanitize Data to prevent crashes on empty arrays from Firebase
+                    globalData.locations.forEach(loc => {
+                        if (!loc.data) loc.data = {};
+                        const d = loc.data;
+                        if (!d.employees) d.employees = [];
+                        if (!d.shifts) d.shifts = [];
+                        if (!d.schedules) d.schedules = [];
+                        if (!d.assignments) d.assignments = [];
+                        if (!d.overtimeSignups) d.overtimeSignups = [];
+                        if (!d.overtimeScratches) d.overtimeScratches = { voluntary: [], mandatory: [] };
+                        if (!d.overtimeLists) d.overtimeLists = { voluntary: [], mandatory: [] };
+                        if (!d.overtimeNotes) d.overtimeNotes = {};
+                        if (!d.overtimeRefusals) d.overtimeRefusals = {};
+                        if (!d.vacationSchedules) d.vacationSchedules = [];
+                        if (!d.vacationAssignments) d.vacationAssignments = [];
+                        if (!d.employeeTypes) d.employeeTypes = [];
+                        if (!d.logs) d.logs = [];
+                        if (!d.config) d.config = { title: 'Weekly Schedule' };
+                        
+                        // Ensure sub-items have logs array
+                        d.employees.forEach(e => { if(!e.logs) e.logs = []; });
+                        d.shifts.forEach(s => { if(!s.logs) s.logs = []; });
+                        d.schedules.forEach(s => { if(!s.logs) s.logs = []; });
+                    });
+
                     if (globalData.currentLocation) {
                         const loc = globalData.locations.find(l => l.id === globalData.currentLocation);
                         if (loc) currentData = loc.data;
@@ -674,6 +722,10 @@
             }
 
             if (empFound) {
+                // We can't easily log to the specific employee object here without finding it again in the structure, 
+                // but since it's the current user, we can try. For now, system log is acceptable for self-change or we rely on the loop above.
+                // Actually, let's just log to system as "User X changed password"
+                logAction('Password Change', 'User changed their own password');
                 alert("Password updated successfully.");
                 closeModal();
             } else {
@@ -732,6 +784,7 @@
                     updateLocationUI();
                 }
 
+                logAction('Login', `User logged in: ${foundEmp.name}`, foundEmp);
                 updateLoginUI();
                 closeModal();
                 goHome();
@@ -740,7 +793,7 @@
             }
         }
 
-        function logout() { currentUser = null; updateLoginUI(); goHome(); }
+        function logout() { logAction('Logout', 'User logged out'); currentUser = null; updateLoginUI(); goHome(); }
         function updateLoginUI() {
             const btn = document.getElementById('loginBtn');
             if (currentUser) { btn.textContent = `Logout (${currentUser.name})`; btn.onclick = logout; }
@@ -887,7 +940,7 @@
             document.getElementById('calendarControls').innerHTML = `<div class="filter-section"><div class="filter-group"><label>View:</label><select id="calendarViewType" onchange="updateCalendarView()"><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="daily">Daily</option></select></div><div class="filter-group"><label>Shift:</label><select id="calendarShiftFilter" onchange="updateCalendarView()"><option value="">All Shifts</option></select></div><div class="filter-group"><label>Employee:</label><select id="calendarEmployeeFilter" onchange="updateCalendarView()"><option value="">All Employees</option></select></div><div class="filter-group"><label>Type:</label><select id="calendarTypeFilter" onchange="updateCalendarView()"><option value="all">All Assignments</option><option value="work">Work Assignments</option><option value="timeoff">Time Off Assignments</option></select></div></div><div class="calendar-nav"><button class="btn btn-secondary" onclick="prevCal()">←</button><div class="calendar-title-container"><span id="calendarPeriodLabel"></span></div><button class="btn btn-secondary" onclick="nextCal()">→</button><button class="btn btn-secondary" onclick="todayCal()">Today</button></div>`;
             updateCalendarFilters(); updateCalendarView();
         }
-        function updateCalendarFilters() { const sFilter = document.getElementById('calendarShiftFilter'); if(!sFilter) return; sFilter.innerHTML = '<option value="">All Shifts</option>' + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}">${s.name}</option>`).join(''); const eFilter = document.getElementById('calendarEmployeeFilter'); eFilter.innerHTML = '<option value="">All Employees</option>' + currentData.employees.filter(e => !e.archived).map(e => `<option value="${e.id}">${e.name}</option>`).join(''); }
+        function updateCalendarFilters() { const sFilter = document.getElementById('calendarShiftFilter'); if(!sFilter) return; sFilter.innerHTML = '<option value="">All Shifts</option>' + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}">${s.name}</option>`).join(''); const eFilter = document.getElementById('calendarEmployeeFilter'); eFilter.innerHTML = '<option value="">All Employees</option>' + currentData.employees.filter(e => !e.archived && !e.isHidden).map(e => `<option value="${e.id}">${e.name}</option>`).join(''); }
         function updateCalendarView() { const viewSelect = document.getElementById('calendarViewType'); if (!viewSelect) return; calendarViewType = viewSelect.value; const label = document.getElementById('calendarPeriodLabel'); if (!label) return; if(calendarViewType === 'weekly') { const dates = getWeekDates(currentCalendarDate); label.textContent = `${dates[0].toLocaleDateString()} - ${dates[6].toLocaleDateString()}`; displayWeeklyCalendar(); } else if(calendarViewType === 'monthly') { label.textContent = currentCalendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); displayMonthlyCalendar(); } else { label.textContent = currentCalendarDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); displayDailyCalendar(); } renderActionsSidebar(); }
         function prevCal() { if(calendarViewType === 'weekly') currentCalendarDate.setDate(currentCalendarDate.getDate()-7); else if(calendarViewType === 'monthly') currentCalendarDate.setMonth(currentCalendarDate.getMonth()-1); else currentCalendarDate.setDate(currentCalendarDate.getDate()-1); updateCalendarView(); }
         function nextCal() { if(calendarViewType === 'weekly') currentCalendarDate.setDate(currentCalendarDate.getDate()+7); else if(calendarViewType === 'monthly') currentCalendarDate.setMonth(currentCalendarDate.getMonth()+1); else currentCalendarDate.setDate(currentCalendarDate.getDate()+1); updateCalendarView(); }
@@ -918,7 +971,7 @@
             const headerRow = `<div class="calendar-header-row"><div class="calendar-header-cell"></div>` + dates.map(d => `<div class="calendar-header-cell">${d.toLocaleDateString('en-US',{weekday:'short'})} ${d.getDate()}</div>`).join('') + `</div>`;
             
             currentData.shifts.filter(s => (!s.archived || s.archivedAt > dates[6].toISOString()) && (!shiftFilter || s.id === shiftFilter)).sort((a,b)=>(a.order||99)-(b.order||99)).forEach(shift => {
-                let shiftHtml = `<div class="print-wrapper">` + headerRow + `<div class="shift-section"><div class="calendar-grid calendar-week-view"><div class="shift-header-cell" style="background:${shift.color}">${shift.name}</div>`;
+                let shiftHtml = headerRow + `<div class="shift-section"><div class="calendar-grid calendar-week-view"><div class="shift-header-cell" style="background:${shift.color}">${shift.name}</div>`;
                 
                 // Staffing Row
                 if (!empFilter) {
@@ -942,7 +995,7 @@
                     hasRows = true; shiftHtml += `<div class="schedule-name-cell">${sched.name}</div>`; dates.forEach(d => { shiftHtml += renderCell(d, sched, empFilter, typeFilter); });
                 });
                 
-                shiftHtml += `</div></div></div>`;
+                shiftHtml += `</div></div>`;
                 if(hasRows || !empFilter) html += shiftHtml;
             });
             container.innerHTML = html; addDragListeners();
@@ -1173,7 +1226,7 @@
                 if (btnContainer) btnContainer.style.display = 'block';
             }
 
-            const emps = currentData.employees.filter(e => !e.archived).sort((a,b)=>a.name.localeCompare(b.name)).map(e => `<option value="${e.id}">${e.name}</option>`).join(''); 
+            const emps = currentData.employees.filter(e => !e.archived && !e.isHidden).sort((a,b)=>a.name.localeCompare(b.name)).map(e => `<option value="${e.id}">${e.name}</option>`).join(''); 
             let bubbles = '';
             Object.values(ASSIGNMENT_TYPES).forEach(type => { const color = getAssignmentColor(type); const contrast = getContrastColor(color); bubbles += `<div class="assignment-bubble" draggable="true" data-assignment-type="${type}" style="background:${color}; color:${contrast}" title="${type}">${type}</div>`; });
             
@@ -1279,6 +1332,7 @@
                     const segId = generateId();
                     currentData.vacationSchedules.push({ id: segId, employeeId: targetEmpId, startDate: date, endDate: date });
                     currentData.vacationAssignments.push({ id: generateId(), segmentId: segId, employeeId: targetEmpId, date: date });
+                    logAction('Create Vacation', `Created vacation segment on ${date}`, currentData.employees.find(e=>e.id===targetEmpId));
                     assignmentType = ASSIGNMENT_TYPES.VACATION_SEGMENT;
                 }
 
@@ -1289,13 +1343,15 @@
                 if (ass) { 
                     const targetAss = currentData.assignments.find(a => a.scheduleId === schedId && a.date === date && !ADDITIVE_TYPES.includes(a.type)); 
                     if(targetAss) { 
-                        showConfirmationModal('Replace?', `Replace ${getEmployeeName(targetAss.employeeId)}?`, () => { 
+                        showConfirmationModal('Replace?', `Replace ${getEmployeeName(targetAss.employeeId)}?`, () => {
+                            logAction('Replace Assignment', `Replaced ${getEmployeeName(targetAss.employeeId)} with ${getEmployeeName(ass.employeeId)} on ${date}`, currentData.employees.find(e=>e.id===targetAss.employeeId)); 
                             currentData.assignments = currentData.assignments.filter(x => x.id !== targetAss.id); 
                             ass.scheduleId = schedId; 
                             ass.date = date; 
                             updateCalendarView(); 
                         }); 
                     } else { 
+                        logAction('Move Assignment', `Moved assignment to ${date}`, currentData.employees.find(e=>e.id===ass.employeeId));
                         ass.scheduleId = schedId; 
                         ass.date = date; 
                         updateCalendarView(); 
@@ -1535,6 +1591,7 @@
             }
 
             if(dur === 'day') { 
+                logAction('Assign Single', `Assigned to ${assignmentType} on ${date}`, currentData.employees.find(e=>e.id===empId));
                 applyAssignment(empId, schedId, date, date, assignmentType, note); 
                 if (isVacation && segId) {
                     currentData.vacationAssignments.push({ id: generateId(), segmentId: segId, employeeId: empId, date: date });
@@ -1551,6 +1608,7 @@
                 const current = getLocalDateFromStr(startVal);
                 const end = getLocalDateFromStr(endVal);
                 
+                logAction('Assign Multi-Day', `Assigned to ${assignmentType} from ${startVal} to ${endVal}`, currentData.employees.find(e=>e.id===empId));
                 // Loop through dates
                 while (current <= end) {
                     const isoDate = getLocalDateString(current);
@@ -1625,6 +1683,7 @@
 
             if (mode === 'single') {
                 syncVacationDelete(ass);
+                logAction('Delete Assignment', `Deleted single assignment on ${ass.date}`, currentData.employees.find(e=>e.id===ass.employeeId));
                 currentData.assignments = currentData.assignments.filter(a => a.id !== id);
                 closeModal();
                 updateCalendarView();
@@ -1639,6 +1698,7 @@
                             }
                             return true; // Keep
                         });
+                        logAction('Delete Future', `Deleted future assignments from ${ass.date}`, currentData.employees.find(e=>e.id===ass.employeeId));
                         updateCalendarView();
                     }
                 );
@@ -1678,6 +1738,7 @@
                         }
                         return true; // Keep
                     });
+                    logAction('Delete Past', `Deleted past assignments from ${startDate} to ${ass.date}`, currentData.employees.find(e=>e.id===ass.employeeId));
                     updateCalendarView();
                 }
             );
@@ -1685,15 +1746,20 @@
 
         function loadRoster() {
             const container = document.getElementById('roster'); const shiftOptions = `<option value="">All Shifts</option>` + currentData.shifts.filter(s=>!s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s=>`<option value="${s.id}">${s.name}</option>`).join(''); const typeOptions = `<option value="">All Types</option>` + currentData.employeeTypes.map(t=>`<option value="${t.id}">${t.name}</option>`).join('');
-            container.innerHTML = `<div style="margin-bottom: 10px;"><button class="btn btn-secondary" onclick="goHome()">← Back to Home</button></div><div class="filter-section" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><div style="display:flex; gap:15px;"><div class="filter-group"><label>Sort:</label><select id="rosterSort" onchange="renderRosterTables()"><option value="alpha">Alphabetical (A-Z)</option><option value="seniority">Seniority (Oldest First)</option><option value="inverse">Inverse Seniority (Newest First)</option></select></div><div class="filter-group"><label>Shift:</label><select id="rosterShiftFilter" onchange="renderRosterTables()">${shiftOptions}</select></div><div class="filter-group"><label>Type:</label><select id="rosterTypeFilter" onchange="renderRosterTables()">${typeOptions}</select></div></div><div class="tabs" style="margin:0; box-shadow:none"><button class="tab active" onclick="toggleRosterView('active')">Active</button><button class="tab" onclick="toggleRosterView('archived')">Archived</button></div></div><div id="rosterActiveView" class="roster-view"><div id="rosterActive" class="table-container bubble-container"></div></div><div id="rosterArchivedView" class="roster-view hidden"><div id="rosterArchived" class="table-container bubble-container"></div></div>`;
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const showHiddenOption = (role === ROLES.OWNER) ? `<div class="filter-group" style="margin-left:10px;"><label style="cursor:pointer; display:flex; align-items:center; gap:5px; text-transform:none; font-size:13px;"><input type="checkbox" id="rosterShowHidden" onchange="renderRosterTables()" style="width:auto;"> Show Hidden</label></div>` : '';
+            container.innerHTML = `<div style="margin-bottom: 10px;"><button class="btn btn-secondary" onclick="goHome()">← Back to Home</button></div><div class="filter-section" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><div style="display:flex; gap:15px;"><div class="filter-group"><label>Sort:</label><select id="rosterSort" onchange="renderRosterTables()"><option value="alpha">Alphabetical (A-Z)</option><option value="seniority">Seniority (Oldest First)</option><option value="inverse">Inverse Seniority (Newest First)</option></select></div><div class="filter-group"><label>Shift:</label><select id="rosterShiftFilter" onchange="renderRosterTables()">${shiftOptions}</select></div><div class="filter-group"><label>Type:</label><select id="rosterTypeFilter" onchange="renderRosterTables()">${typeOptions}</select></div>${showHiddenOption}</div><div class="tabs" style="margin:0; box-shadow:none"><button class="tab active" onclick="toggleRosterView('active')">Active</button><button class="tab" onclick="toggleRosterView('archived')">Archived</button></div></div><div id="rosterActiveView" class="roster-view"><div id="rosterActive" class="table-container bubble-container"></div></div><div id="rosterArchivedView" class="roster-view hidden"><div id="rosterArchived" class="table-container bubble-container"></div></div>`;
             renderRosterTables();
         }
         function toggleRosterView(view) { document.getElementById('rosterActiveView').classList.toggle('hidden', view !== 'active'); document.getElementById('rosterArchivedView').classList.toggle('hidden', view !== 'archived'); const tabs = document.querySelectorAll('#roster .tab'); tabs.forEach(t => t.classList.remove('active')); if (view === 'active') tabs[0].classList.add('active'); if (view === 'archived') tabs[1].classList.add('active'); }
         function renderRosterTables() {
             const sort = document.getElementById('rosterSort')?.value || 'alpha'; const shiftFilter = document.getElementById('rosterShiftFilter')?.value; const typeFilter = document.getElementById('rosterTypeFilter')?.value;
+            const showHidden = document.getElementById('rosterShowHidden')?.checked || false;
             const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const canEdit = (role === ROLES.OWNER || role === ROLES.ADMIN);
             const canManageAccounts = (role === ROLES.OWNER || role === ROLES.ADMIN);
             let active = currentData.employees.filter(e => !e.archived);
+            if (!showHidden) active = active.filter(e => !e.isHidden);
             if (shiftFilter) active = active.filter(e => e.defaultShift === shiftFilter);
             if (typeFilter) active = active.filter(e => e.type === typeFilter);
             active.sort((a, b) => { if (sort === 'alpha') return a.name.localeCompare(b.name); if (sort === 'seniority') { const dA = new Date(a.seniorityDate); const dB = new Date(b.seniorityDate); if (dA < dB) return -1; if (dA > dB) return 1; return a.name.localeCompare(b.name); } if (sort === 'inverse') { const dA = new Date(a.seniorityDate); const dB = new Date(b.seniorityDate); if (dA > dB) return -1; if (dA < dB) return 1; return b.name.localeCompare(a.name); } return 0; });
@@ -1702,17 +1768,21 @@
             active.forEach(e => { 
                 const shiftName = currentData.shifts.find(s=>s.id===e.defaultShift)?.name || 'N/A'; 
                 const typeName = currentData.employeeTypes.find(t=>t.id===e.type)?.name || '-'; 
+                const isTargetOwner = e.systemRole === ROLES.OWNER;
+                const canViewThisAccount = (role === ROLES.OWNER) || (role === ROLES.ADMIN && !isTargetOwner);
+                const hiddenBadge = e.isHidden ? '<span style="font-size:10px; background:#e2e8f0; color:#64748b; padding:2px 5px; border-radius:4px; margin-left:5px;">Hidden</span>' : '';
+                const canViewSchedule = canEdit || (role === ROLES.EMPLOYEE && currentUser.id === e.id);
                 html += `<tr>
-                    <td>${e.name}</td>
+                    <td>${e.name}${hiddenBadge}</td>
                     <td>${formatDate(e.seniorityDate)}</td>
                     <td>${shiftName}</td>
                     <td>${typeName}</td>
-                    <td><input type="text" value="${e.rosterNote||''}" onchange="saveRosterNote('${e.id}', this.value)" placeholder="Add note..."></td>
+                    <td><input type="text" value="${e.rosterNote||''}" onchange="saveRosterNote('${e.id}', this.value)" placeholder="Add note..." ${!canEdit ? 'disabled' : ''}></td>
                     <td>
-                        <button class="action-bubble view" onclick="viewEmployeeSchedule('${e.id}')">View Schedule</button>
-                        ${canManageAccounts ? `<button class="action-bubble view" style="background:#f3e8ff; color:#6b21a8; border-color:#d8b4fe;" onclick="showEmployeeAccountModal('${e.id}')">Account</button>` : ''}
-                        <button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>
-                        <button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>
+                        ${canViewSchedule ? `<button class="action-bubble view" onclick="viewEmployeeSchedule('${e.id}')">View Schedule</button>` : ''}
+                        ${canManageAccounts && canViewThisAccount ? `<button class="action-bubble view" style="background:#f3e8ff; color:#6b21a8; border-color:#d8b4fe;" onclick="showEmployeeAccountModal('${e.id}')">Account</button>` : ''}
+                        ${canEdit ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
+                        ${canEdit ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
                     </td>
                 </tr>`; 
             }); 
@@ -1726,17 +1796,26 @@
                     <td>
                         <button class="action-bubble view" onclick="viewEmployeeSchedule('${e.id}')">History</button>
                         <button class="action-bubble restore" onclick="restoreEmployee('${e.id}')">Restore</button>
-                        <button class="action-bubble delete" onclick="deleteEmployeePermanently('${e.id}')">Delete Permanently</button>
+                        <button class="action-bubble delete" onclick="deleteEmployeePermanently('${e.id}', false)">Delete Permanently</button>
                     </td>
                 </tr>`; 
             }); 
             html2 += `</tbody></table>`; 
             document.getElementById('rosterArchived').innerHTML = html2;
         }
-        function saveRosterNote(id, val) { const e = currentData.employees.find(x => x.id === id); if(e) e.rosterNote = val; }
+        function saveRosterNote(id, val) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return;
+            const e = currentData.employees.find(x => x.id === id); if(e) e.rosterNote = val; 
+        }
         
         let currentEmpViewId = null; let currentEmpViewMode = 'weekly'; let currentEmpViewDate = new Date();
-        function viewEmployeeSchedule(id) { currentEmpViewId = id; currentEmpViewDate = new Date(currentCalendarDate); const emp = currentData.employees.find(x => x.id === id); createModal(`Schedule: ${emp.name}`, `<div style="display:flex; justify-content:space-between; margin-bottom:10px;"><div class="tabs" style="box-shadow:none; margin:0"><button class="tab active" id="tabEmpWeekly" onclick="switchEmpViewMode('weekly')">Weekly</button><button class="tab" id="tabEmpMonthly" onclick="switchEmpViewMode('monthly')">Monthly</button></div><div style="display:flex; gap:10px; align-items:center;"><button class="btn btn-sm btn-secondary" onclick="printContent('empScheduleContainer', 'Schedule: ${emp.name}')">Print</button><div><button class="btn btn-sm btn-secondary" onclick="navEmpView(-1)">←</button> <span id="empViewLabel" style="font-weight:600; font-size:13px;"></span> <button class="btn btn-sm btn-secondary" onclick="navEmpView(1)">→</button></div></div></div><div id="empScheduleContainer" class="table-container" style="max-height:500px; overflow-y:auto;"></div>`, '900px'); renderEmpSchedule(); }
+        function viewEmployeeSchedule(id) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE && currentUser.id !== id) return alert("Access Denied: You can only view your own schedule.");
+            if (role === ROLES.GUEST) return alert("Access Denied.");
+            currentEmpViewId = id; currentEmpViewDate = new Date(currentCalendarDate); const emp = currentData.employees.find(x => x.id === id); createModal(`Schedule: ${emp.name}`, `<div style="display:flex; justify-content:space-between; margin-bottom:10px;"><div class="tabs" style="box-shadow:none; margin:0"><button class="tab active" id="tabEmpWeekly" onclick="switchEmpViewMode('weekly')">Weekly</button><button class="tab" id="tabEmpMonthly" onclick="switchEmpViewMode('monthly')">Monthly</button></div><div style="display:flex; gap:10px; align-items:center;"><button class="btn btn-sm btn-secondary" onclick="printContent('empScheduleContainer', 'Schedule: ${emp.name}')">Print</button><div><button class="btn btn-sm btn-secondary" onclick="navEmpView(-1)">←</button> <span id="empViewLabel" style="font-weight:600; font-size:13px;"></span> <button class="btn btn-sm btn-secondary" onclick="navEmpView(1)">→</button></div></div></div><div id="empScheduleContainer" class="table-container" style="max-height:500px; overflow-y:auto;"></div>`, '900px'); renderEmpSchedule(); 
+        }
         function switchEmpViewMode(mode) { currentEmpViewMode = mode; document.getElementById('tabEmpWeekly').classList.toggle('active', mode === 'weekly'); document.getElementById('tabEmpMonthly').classList.toggle('active', mode === 'monthly'); renderEmpSchedule(); }
         function navEmpView(dir) { if(currentEmpViewMode==='weekly') currentEmpViewDate.setDate(currentEmpViewDate.getDate() + (dir*7)); else currentEmpViewDate.setMonth(currentEmpViewDate.getMonth() + dir); renderEmpSchedule(); }
         
@@ -1863,11 +1942,14 @@
         }
 
         function archiveEmployee(id) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
             showArchiveModal('Archive Employee', '<strong>Warning:</strong> Archiving this employee will remove all their schedule assignments ON and AFTER the selected date.', (date) => { 
                 const e = currentData.employees.find(x => x.id === id); 
                 e.archived = true; 
                 e.archivedAt = date; 
                 // Remove future assignments
+                logAction('Archive Employee', `Archived effective ${date}`, e);
                 currentData.assignments = currentData.assignments.filter(a => {
                     // Keep if not this employee OR if date is strictly before archive date
                     return a.employeeId !== id || a.date < date;
@@ -1875,9 +1957,9 @@
                 renderRosterTables(); 
             }); 
         }
-        function restoreEmployee(id) { const e = currentData.employees.find(x => x.id === id); e.archived = false; e.archivedAt = null; renderRosterTables(); }
+        function restoreEmployee(id) { const e = currentData.employees.find(x => x.id === id); e.archived = false; e.archivedAt = null; logAction('Restore Employee', `Restored employee`, e); renderRosterTables(); }
         
-        function deleteEmployeePermanently(id) {
+        function deleteEmployeePermanently(id, fromAdmin = false) {
             if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot permanently delete items.");
             showConfirmationModal('Delete Permanently?', 'This will permanently delete the employee record and ALL historical assignments. This cannot be undone.', () => {
                 // Remove from employees array
@@ -1889,21 +1971,36 @@
                 currentData.vacationSchedules = currentData.vacationSchedules.filter(v => v.employeeId !== id);
                 
                 // Refresh admin views
-                loadAdminSection('employee', 'archivedEmployees');
+                logAction('Delete Employee', `Permanently deleted employee ID ${id}`); // Log to system as item is gone
+                if (fromAdmin) {
+                    loadAdminSection('employee', 'archivedEmployees');
+                } else {
+                    renderRosterTables();
+                }
             });
         }
 
-        function editEmployee(id, fromAdmin = false) { const e = currentData.employees.find(x => x.id === id); if (!e) return; const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}" ${s.id === e.defaultShift ? 'selected' : ''}>${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}" ${t.id === e.type ? 'selected' : ''}>${t.name}</option>`).join(''); 
+        function editEmployee(id, fromAdmin = false) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
+            const e = currentData.employees.find(x => x.id === id); if (!e) return; const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}" ${s.id === e.defaultShift ? 'selected' : ''}>${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}" ${t.id === e.type ? 'selected' : ''}>${t.name}</option>`).join(''); 
             const roleOptions = Object.values(ROLES).map(r => `<option value="${r}" ${e.systemRole === r ? 'selected' : ''}>${r}</option>`).join('');
             const roleSelect = fromAdmin ? `<div><label>System Role</label><select id="editEmpRole">${roleOptions}</select></div>` : '';
             const locOptions = globalData.locations.filter(l => !l.archived).map(l => `<option value="${l.id}" ${l.id === e.defaultLocation ? 'selected' : ''}>${l.name}</option>`).join('');
             const cancelAction = fromAdmin ? "loadAdminSection('employee', 'activeEmployees')" : "closeModal()";
-            createModal('Edit Employee', `<div class="form-row"><div><label>Name</label><input type="text" id="editEmpName" value="${e.name}"></div><div><label>Seniority</label><input type="date" id="editEmpSeniority" value="${e.seniorityDate}"></div></div><div class="form-row"><div><label>Type</label><select id="editEmpType">${typeOptions}</select></div><div><label>Default Shift</label><select id="editEmpShift">${shiftOptions}</select></div></div><div class="form-row"><div><label>Default Location</label><select id="editEmpLocation">${locOptions}</select></div>${fromAdmin ? roleSelect : ''}</div><div class="action-buttons"><button class="btn btn-primary" onclick="saveEmployeeChanges('${id}', ${fromAdmin})">Save Changes</button><button class="btn btn-secondary" onclick="${cancelAction}">Cancel</button></div>`); }
-        function saveEmployeeChanges(id, fromAdmin) { const e = currentData.employees.find(x => x.id === id); if (e) { e.name = document.getElementById('editEmpName').value; e.seniorityDate = document.getElementById('editEmpSeniority').value; e.type = document.getElementById('editEmpType').value; e.defaultShift = document.getElementById('editEmpShift').value; e.defaultLocation = document.getElementById('editEmpLocation').value; if(fromAdmin) e.systemRole = document.getElementById('editEmpRole').value; renderRosterTables(); if(fromAdmin) loadAdminSection('employee', 'activeEmployees'); else closeModal(); alert('Changes saved.'); } }
+            createModal('Edit Employee', `<div class="form-row"><div><label>Name</label><input type="text" id="editEmpName" value="${e.name}"></div><div><label>Seniority</label><input type="date" id="editEmpSeniority" value="${e.seniorityDate}"></div></div><div class="form-row"><div><label>Type</label><select id="editEmpType">${typeOptions}</select></div><div><label>Default Shift</label><select id="editEmpShift">${shiftOptions}</select></div></div><div class="form-row"><div><label>Default Location</label><select id="editEmpLocation">${locOptions}</select></div>${fromAdmin ? roleSelect : ''}</div><div class="form-group"><label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="editEmpHidden" ${e.isHidden ? 'checked' : ''} style="width:auto;"> Hide from Roster (User can still login)</label></div><div class="action-buttons"><button class="btn btn-primary" onclick="saveEmployeeChanges('${id}', ${fromAdmin})">Save Changes</button><button class="btn btn-secondary" onclick="${cancelAction}">Cancel</button></div>`); }
+        function saveEmployeeChanges(id, fromAdmin) { const e = currentData.employees.find(x => x.id === id); if (e) { e.name = document.getElementById('editEmpName').value; e.seniorityDate = document.getElementById('editEmpSeniority').value; e.type = document.getElementById('editEmpType').value; e.defaultShift = document.getElementById('editEmpShift').value; e.defaultLocation = document.getElementById('editEmpLocation').value; e.isHidden = document.getElementById('editEmpHidden').checked; if(fromAdmin) e.systemRole = document.getElementById('editEmpRole').value; logAction('Edit Employee', `Updated details`, e); renderRosterTables(); if(fromAdmin) loadAdminSection('employee', 'activeEmployees'); else closeModal(); alert('Changes saved.'); } }
 
         function showEmployeeAccountModal(empId) {
             const emp = currentData.employees.find(e => e.id === empId);
             if (!emp) return;
+            
+            // Security Check: Admins cannot view Owner accounts
+            if (emp.systemRole === ROLES.OWNER) {
+                if (!currentUser || currentUser.role !== ROLES.OWNER) {
+                    return alert("Security Alert: Only Owners can manage Owner accounts.");
+                }
+            }
             
             createModal(`Account: ${emp.name}`, `
                 <div class="form-group"><label>Username</label><input type="text" id="adminEmpUser" value="${emp.username || ''}"></div>
@@ -1922,6 +2019,7 @@
             if (emp) {
                 emp.username = u;
                 emp.password = p;
+                logAction('Admin Password Change', `Changed credentials`, emp);
                 alert("Credentials updated.");
                 closeModal();
             }
@@ -2074,6 +2172,7 @@
                     return d.getFullYear() !== year || d.getMonth() !== month;
                 });
 
+                logAction('Clear OT Log', `Cleared overtime for ${monthName}`);
                 updateOTView();
                 alert(`Cleared overtime log for ${monthName}.`);
             });
@@ -2194,6 +2293,7 @@
                         contactLog: [] 
                     }); 
             }); 
+            logAction('Batch OT Signup', `Signed up ${overtimeSelectedDates.length} slots`, currentData.employees.find(e=>e.id===empId));
             clearOTSelection(); 
             closeModal(); 
             updateOTView(); 
@@ -2329,7 +2429,7 @@
         }
 
         function showOTSignupModalSingle(shiftId, dateStr) {
-            const empOptions = getFullTimeEmployees().map(e => `<option value="${e.id}">${e.name}</option>`).join(''); 
+            const empOptions = getFullTimeEmployees().filter(e => !e.isHidden).map(e => `<option value="${e.id}">${e.name}</option>`).join(''); 
             
             // Removed Schedule Preference Dropdown
             createModal('Sign Up Volunteer', `
@@ -2365,6 +2465,7 @@
                 contactLog: [] 
             }); 
 
+            logAction('Single OT Signup', `Signed up for ${shiftId} on ${dateStr}`, currentData.employees.find(e=>e.id===empId));
             // Return to the list view
             showOTVolunteersModal(shiftId, dateStr);
             updateOTView();
@@ -2451,6 +2552,7 @@
                  // Log approval
                  if(!s.contactLog) s.contactLog = [];
                  s.contactLog.push({ timestamp: new Date().toISOString(), message: "Approved and assigned." });
+                 logAction('Approve OT', `Approved OT on ${dateStr}`, currentData.employees.find(e=>e.id===s.employeeId));
 
                  // Refresh modal to show updated status
                  showOTVolunteersModal(s.shiftId, dateStr);
@@ -2481,6 +2583,7 @@
                     currentData.overtimeScratches.voluntary.push(s.employeeId);
                 }
                 
+                logAction('Decline OT', `Declined OT on ${s.date}`, currentData.employees.find(e=>e.id===s.employeeId));
                 showOTVolunteersModal(s.shiftId, s.date);
                 updateOTView();
             });
@@ -2505,6 +2608,7 @@
                 
                 s.contactLog.push({ timestamp: now.toISOString(), message: `Cancelled: ${dateStr} ${timeStr}` });
                 
+                logAction('Cancel OT', `Cancelled OT on ${s.date}`, currentData.employees.find(e=>e.id===s.employeeId));
                 showOTVolunteersModal(s.shiftId, s.date); 
                 updateOTView(); 
             });
@@ -2774,6 +2878,7 @@
             if (!vacantId && !confirm("No vacant slots available for this shift. Assign anyway?")) return;
 
             if(applyAssignment(empId, schedId, date, date, ASSIGNMENT_TYPES.OVERTIME_M)) { 
+                logAction('Force Assign OT', `Force assigned to Mandatory OT on ${date}`, currentData.employees.find(e=>e.id===empId));
                 closeModal(); alert(currentData.config.autoScratch !== false ? 'Assigned and scratched from Mandatory List.' : 'Assigned (Auto-Scratch OFF).'); 
             } 
         }
@@ -2851,6 +2956,7 @@
             let weekTotalWork = 0;
             let weekTotalOff = 0;
             let filteredEmps = weeklyHoursViewMode === 'active' ? currentData.employees.filter(e=>!e.archived) : currentData.employees.filter(e=>e.archived);
+            filteredEmps = filteredEmps.filter(e => !e.isHidden);
             if(shiftFilter) filteredEmps = filteredEmps.filter(e => e.defaultShift === shiftFilter); 
             if(empFilter) filteredEmps = filteredEmps.filter(e => e.id === empFilter);
             
@@ -3012,6 +3118,7 @@
                     return d.getFullYear() !== year || d.getMonth() !== month;
                 });
 
+                logAction('Clear Vacation Log', `Cleared vacation for ${monthName}`);
                 updateVacationView();
                 alert(`Cleared vacation log for ${monthName}.`);
             });
@@ -3045,10 +3152,10 @@
             html += `</div>`; 
             container.innerHTML = html; 
         }
-        function showManageVacationSchedulesModal() { const role = currentUser ? currentUser.role : ROLES.GUEST; const isReadOnly = (role === ROLES.EMPLOYEE || role === ROLES.GUEST); const emps = currentData.employees.filter(e=>!e.archived).sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join(''); createModal('Manage Vacation', `${isReadOnly ? '<p>View Only Mode</p>' : `<div class="form-row"><div><label>Employee</label><select id="vacEmp">${emps}</select></div><div><label>Start</label><input type="date" id="vacStart"></div><div><label>End</label><input type="date" id="vacEnd"></div></div><div class="action-buttons"><button class="btn btn-primary" onclick="addVacationSegment()">Add</button></div>`}<hr><div id="vacList"></div>`); renderVacationList(); }
+        function showManageVacationSchedulesModal() { const role = currentUser ? currentUser.role : ROLES.GUEST; const isReadOnly = (role === ROLES.EMPLOYEE || role === ROLES.GUEST); const emps = currentData.employees.filter(e=>!e.archived && !e.isHidden).sort((a,b)=>a.name.localeCompare(b.name)).map(e=>`<option value="${e.id}">${e.name}</option>`).join(''); createModal('Manage Vacation', `${isReadOnly ? '<p>View Only Mode</p>' : `<div class="form-row"><div><label>Employee</label><select id="vacEmp">${emps}</select></div><div><label>Start</label><input type="date" id="vacStart"></div><div><label>End</label><input type="date" id="vacEnd"></div></div><div class="action-buttons"><button class="btn btn-primary" onclick="addVacationSegment()">Add</button></div>`}<hr><div id="vacList"></div>`); renderVacationList(); }
         function renderVacationList() { const role = currentUser ? currentUser.role : ROLES.GUEST; const isReadOnly = (role === ROLES.EMPLOYEE || role === ROLES.GUEST); const container = document.getElementById('vacList'); if(!container) return; let html = '<table><thead><tr><th>Employee</th><th>Start</th><th>End</th><th>Actions</th></tr></thead><tbody>'; currentData.vacationSchedules.forEach(v => { const emp = currentData.employees.find(e=>e.id===v.employeeId); if(emp) html += `<tr><td>${emp.name}</td><td>${v.startDate}</td><td>${v.endDate}</td><td>${isReadOnly ? 'View Only' : `<button class="action-bubble edit" onclick="editVacationSegment('${v.id}')">Edit</button><button class="action-bubble delete" onclick="deleteVacationSegment('${v.id}')">Delete</button>`}</td></tr>`; }); html += '</tbody></table>'; container.innerHTML = html; }
         
-        function addVacationSegment() { const empId = document.getElementById('vacEmp').value; const start = document.getElementById('vacStart').value; const end = document.getElementById('vacEnd').value; if(!empId || !start || !end) return alert('Fields required'); const segId = generateId(); currentData.vacationSchedules.push({ id: segId, employeeId: empId, startDate: start, endDate: end }); generateVacationAssignments(segId, empId, start, end); renderVacationList(); updateVacationView(); }
+        function addVacationSegment() { const empId = document.getElementById('vacEmp').value; const start = document.getElementById('vacStart').value; const end = document.getElementById('vacEnd').value; if(!empId || !start || !end) return alert('Fields required'); const segId = generateId(); currentData.vacationSchedules.push({ id: segId, employeeId: empId, startDate: start, endDate: end }); generateVacationAssignments(segId, empId, start, end); logAction('Add Vacation', `Added vacation segment: ${start} to ${end}`, currentData.employees.find(e=>e.id===empId)); renderVacationList(); updateVacationView(); }
         
         // FIXED: Use getLocalDateFromStr for proper iteration without timezone shifts
         function generateVacationAssignments(segId, empId, start, end, preservedSchedules = {}) {
@@ -3088,7 +3195,7 @@
             if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return; // Read only
             const seg = currentData.vacationSchedules.find(v => v.id === id);
             if (!seg) return;
-            const emps = currentData.employees.filter(e => !e.archived).sort((a,b)=>a.name.localeCompare(b.name)).map(e => `<option value="${e.id}" ${e.id === seg.employeeId ? 'selected' : ''}>${e.name}</option>`).join('');
+            const emps = currentData.employees.filter(e => !e.archived && !e.isHidden).sort((a,b)=>a.name.localeCompare(b.name)).map(e => `<option value="${e.id}" ${e.id === seg.employeeId ? 'selected' : ''}>${e.name}</option>`).join('');
             
             const cancelAction = isFromCalendar ? 'closeModal()' : 'showManageVacationSchedulesModal()';
             const deleteAction = `processVacationDelete('${id}', ${isFromCalendar})`;
@@ -3204,6 +3311,7 @@
 
             // 3. Regenerate Assignments
             generateVacationAssignments(id, seg.employeeId, start, end, preservedSchedules);
+            logAction('Edit Vacation', `Updated vacation segment: ${start} to ${end}`, currentData.employees.find(e=>e.id===seg.employeeId));
 
             if (isFromCalendar) {
                 closeModal();
@@ -3214,6 +3322,8 @@
         }
 
         function deleteVacationSegment(id) { 
+            const seg = currentData.vacationSchedules.find(v => v.id === id);
+            if(seg) logAction('Delete Vacation', `Deleted vacation segment`, currentData.employees.find(e=>e.id===seg.employeeId));
             currentData.vacationSchedules = currentData.vacationSchedules.filter(v => v.id !== id); 
             currentData.vacationAssignments = currentData.vacationAssignments.filter(v => v.segmentId !== id); 
             renderVacationList(); 
@@ -3245,6 +3355,10 @@
             html += '<div class="admin-tile" onclick="editTitle()">';
             html += '<div class="admin-tile-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">✏️</div>';
             html += '<h3 class="admin-tile-title">Edit Title</h3>';
+            html += '</div>';
+            html += '<div class="admin-tile" onclick="showSystemLogs()">';
+            html += '<div class="admin-tile-icon" style="background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);">📜</div>';
+            html += '<h3 class="admin-tile-title">System Logs</h3>';
             html += '</div>';
             html += '</div>';
             createModal('Admin Panel', html, '900px');
@@ -3285,11 +3399,12 @@
                 const shift = row.querySelector('.bulk-shift').value; 
                 if (name) { 
                     const creds = generateCredentials(name);
-                    currentData.employees.push({ id: generateId(), name: name, seniorityDate: date, type: type, defaultShift: shift, archived: false, username: creds.username, password: creds.password, systemRole: ROLES.EMPLOYEE }); 
+                    currentData.employees.push({ id: generateId(), name: name, seniorityDate: date, type: type, defaultShift: shift, archived: false, username: creds.username, password: creds.password, systemRole: ROLES.EMPLOYEE, isHidden: false }); 
                     credsLog += `${name}: ${creds.username} / ${creds.password}\n`;
                     count++; 
                 } 
             }); 
+            logAction('Bulk Add Employees', `Added ${count} employees via bulk tool`);
             console.log(credsLog);
             alert(`Successfully added ${count} employees.\n\nCredentials have been logged to the browser console (F12) for security.`); 
             loadAdminSection('employee'); 
@@ -3297,17 +3412,19 @@
 
         function loadAddEmployeeForm(containerId) { const container = document.getElementById(containerId); if(!container) return; const shiftOptions = `<option value="">N/A</option>` + currentData.shifts.filter(s => !s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<option value="${s.id}">${s.name}</option>`).join(''); const typeOptions = currentData.employeeTypes.map(t => `<option value="${t.id}">${t.name}</option>`).join(''); const roleOptions = Object.values(ROLES).map(r => `<option value="${r}">${r}</option>`).join(''); 
             const locOptions = globalData.locations.filter(l => !l.archived).map(l => `<option value="${l.id}" ${l.id === globalData.currentLocation ? 'selected' : ''}>${l.name}</option>`).join('');
-            container.innerHTML = `<h3>Add New Employee</h3><div class="form-row"><div><label>Name</label><input type="text" id="adminEmployeeName"></div><div><label>Seniority</label><input type="date" id="adminSeniorityDate" value="${getTodayDateString()}"></div></div><div class="form-row"><div><label>Type</label><select id="adminEmployeeType">${typeOptions}</select></div><div><label>Default Shift</label><select id="adminDefaultShift">${shiftOptions}</select></div></div><div class="form-row"><div><label>System Role</label><select id="adminEmployeeRole">${roleOptions}</select></div><div><label>Default Location</label><select id="adminDefaultLocation">${locOptions}</select></div></div><div class="action-buttons"><button class="btn btn-primary" onclick="addEmployee()">Add Employee</button></div>`; }
+            container.innerHTML = `<h3>Add New Employee</h3><div class="form-row"><div><label>Name</label><input type="text" id="adminEmployeeName"></div><div><label>Seniority</label><input type="date" id="adminSeniorityDate" value="${getTodayDateString()}"></div></div><div class="form-row"><div><label>Type</label><select id="adminEmployeeType">${typeOptions}</select></div><div><label>Default Shift</label><select id="adminDefaultShift">${shiftOptions}</select></div></div><div class="form-row"><div><label>System Role</label><select id="adminEmployeeRole">${roleOptions}</select></div><div><label>Default Location</label><select id="adminDefaultLocation">${locOptions}</select></div></div><div class="form-group"><label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="adminIsHidden" style="width:auto;"> Hide from Roster (User can still login)</label></div><div class="action-buttons"><button class="btn btn-primary" onclick="addEmployee()">Add Employee</button></div>`; }
         function addEmployee() { 
             const name = document.getElementById('adminEmployeeName').value; 
             if(!name) return alert('Name required'); 
             const creds = generateCredentials(name);
-            currentData.employees.push({ id: generateId(), name, seniorityDate: document.getElementById('adminSeniorityDate').value, type: document.getElementById('adminEmployeeType').value, defaultShift: document.getElementById('adminDefaultShift').value, archived: false, username: creds.username, password: creds.password, systemRole: document.getElementById('adminEmployeeRole').value, defaultLocation: document.getElementById('adminDefaultLocation').value }); 
+            currentData.employees.push({ id: generateId(), name, seniorityDate: document.getElementById('adminSeniorityDate').value, type: document.getElementById('adminEmployeeType').value, defaultShift: document.getElementById('adminDefaultShift').value, archived: false, username: creds.username, password: creds.password, systemRole: document.getElementById('adminEmployeeRole').value, defaultLocation: document.getElementById('adminDefaultLocation').value, isHidden: document.getElementById('adminIsHidden').checked }); 
+            const newEmp = currentData.employees[currentData.employees.length-1];
+            logAction('Add Employee', `Added new employee`, newEmp);
             alert(`Employee Added.\n\nAuto-Generated Credentials:\nUsername: ${creds.username}\nPassword: ${creds.password}\n\nPlease record these now.`);
             loadAdminSection('employee', 'activeEmployees'); 
         }
         function loadRosterAdmin(containerId) { const container = document.getElementById(containerId); if(!container) return; let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Seniority</th><th>Shift</th><th>Actions</th></tr></thead><tbody>`; currentData.employees.filter(e => !e.archived).sort((a,b) => new Date(a.seniorityDate) - new Date(b.seniorityDate)).forEach(e => { const s = currentData.shifts.find(x => x.id === e.defaultShift); html += `<tr><td>${e.name}</td><td>${formatDate(e.seniorityDate)}</td><td>${s ? s.name : 'N/A'}</td><td><button class="action-bubble edit" onclick="editEmployee('${e.id}', true)">Edit</button><button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button></td></tr>`; }); container.innerHTML = html + '</tbody></table></div>'; }
-        function loadArchivedRosterAdmin(containerId) { const container = document.getElementById(containerId); if(!container) return; let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Archived</th><th>Actions</th></tr></thead><tbody>`; currentData.employees.filter(e => e.archived).forEach(e => { html += `<tr><td>${e.name}</td><td>${formatDate(e.archivedAt)}</td><td><button class="action-bubble restore" onclick="restoreEmployee('${e.id}')">Restore</button><button class="action-bubble delete" onclick="deleteEmployeePermanently('${e.id}')">Delete Permanently</button></td></tr>`; }); container.innerHTML = html + '</tbody></table></div>'; }
+        function loadArchivedRosterAdmin(containerId) { const container = document.getElementById(containerId); if(!container) return; let html = `<div class="table-container"><table><thead><tr><th>Name</th><th>Archived</th><th>Actions</th></tr></thead><tbody>`; currentData.employees.filter(e => e.archived).forEach(e => { html += `<tr><td>${e.name}</td><td>${formatDate(e.archivedAt)}</td><td><button class="action-bubble restore" onclick="restoreEmployee('${e.id}')">Restore</button><button class="action-bubble delete" onclick="deleteEmployeePermanently('${e.id}', true)">Delete Permanently</button></td></tr>`; }); container.innerHTML = html + '</tbody></table></div>'; }
         function showManageEmployeeTypesModal() { isEmployeeTypeEditingUnlocked = false; let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;"><div class="action-buttons" style="margin:0;"><button class="btn btn-success" onclick="showAddEmployeeTypeInput()">+ Add Type</button></div><div><button class="icon-btn" id="unlockDefaultsBtn" onclick="toggleEmployeeTypeLock()" title="Unlock Default Types">🔒</button></div></div><div id="addTypeContainer"></div><div class="table-container"><table><thead><tr><th>Type Name</th><th>Actions</th></tr></thead><tbody>`; currentData.employeeTypes.forEach(t => { const isDefault = t.isDefault; const isLocked = isDefault && !isEmployeeTypeEditingUnlocked; html += `<tr><td><input type="text" id="type-name-${t.id}" value="${t.name}" ${isLocked ? 'disabled style="background:#f5f5f5; cursor:not-allowed; color:#888;"' : ''}></td><td>${isLocked ? '<span style="color:#888; font-size:12px; padding:5px;">Default (Locked)</span>' : `<button class="action-bubble edit" onclick="saveEmployeeTypeEdit('${t.id}')">Save</button><button class="action-bubble delete" onclick="deleteEmployeeType('${t.id}')">Delete</button>`}</td></tr>`; }); createModal('Manage Employee Types', html + '</tbody></table></div>'); }
         function toggleEmployeeTypeLock() { isEmployeeTypeEditingUnlocked = !isEmployeeTypeEditingUnlocked; showManageEmployeeTypesModal(); }
         function showAddEmployeeTypeInput() { document.getElementById('addTypeContainer').innerHTML = `<div class="form-group" style="margin-top:15px;"><label>Name</label><div style="display:flex; gap:10px;"><input type="text" id="newEmployeeTypeName"><button class="btn btn-primary" onclick="addEmployeeType()">Save</button></div></div>`; }
@@ -3368,6 +3485,8 @@
                     order: currentData.shifts.length + 1, 
                     archived: false 
                 }); 
+                const newShift = currentData.shifts[currentData.shifts.length-1];
+                logAction('Add Shift', `Added shift`, newShift);
                 loadAdminSection('shift', 'activeShiftsTab'); 
             } 
         }
@@ -3392,13 +3511,18 @@
         }
         
         function saveShiftEdit(id) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
             const s = currentData.shifts.find(x => x.id === id); 
             const start = document.getElementById('editShiftStart').value;
             const end = document.getElementById('editShiftEnd').value;
             if (!start || !end) return alert("Start and End times are required.");
-            if(s) { s.name = document.getElementById('editShiftName').value; s.color = document.getElementById('editShiftColor').value; s.startTime = start; s.endTime = end; s.minEmployees = parseInt(document.getElementById('editShiftMin').value) || 0; loadAdminSection('shift', 'activeShiftsTab'); refreshCurrentTab('calendar'); } }
-        function archiveShift(id) { showArchiveModal('Archive Shift', 'Enter effective archive date (removes assignments on and after this date):', (date) => { const s = currentData.shifts.find(x => x.id === id); s.archived = true; s.archivedAt = date; currentData.assignments = currentData.assignments.filter(a => { const sched = currentData.schedules.find(sc => sc.id === a.scheduleId); if(sched && sched.shiftId === id && a.date >= date) return false; return true; }); loadAdminSection('shift', 'activeShiftsTab'); refreshCurrentTab('calendar'); }); }
-        function restoreShift(id) { const s = currentData.shifts.find(x => x.id === id); if(s) { s.archived = false; loadAdminSection('shift', 'archivedShiftsTab'); refreshCurrentTab('calendar'); } }
+            if(s) { s.name = document.getElementById('editShiftName').value; s.color = document.getElementById('editShiftColor').value; s.startTime = start; s.endTime = end; s.minEmployees = parseInt(document.getElementById('editShiftMin').value) || 0; logAction('Edit Shift', `Updated shift`, s); loadAdminSection('shift', 'activeShiftsTab'); refreshCurrentTab('calendar'); } }
+        function archiveShift(id) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
+            showArchiveModal('Archive Shift', 'Enter effective archive date (removes assignments on and after this date):', (date) => { const s = currentData.shifts.find(x => x.id === id); s.archived = true; s.archivedAt = date; logAction('Archive Shift', `Archived shift`, s); currentData.assignments = currentData.assignments.filter(a => { const sched = currentData.schedules.find(sc => sc.id === a.scheduleId); if(sched && sched.shiftId === id && a.date >= date) return false; return true; }); loadAdminSection('shift', 'activeShiftsTab'); refreshCurrentTab('calendar'); }); }
+        function restoreShift(id) { const s = currentData.shifts.find(x => x.id === id); if(s) { s.archived = false; logAction('Restore Shift', `Restored shift`, s); loadAdminSection('shift', 'archivedShiftsTab'); refreshCurrentTab('calendar'); } }
         function deleteShiftPermanently(id) {
             if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot permanently delete items.");
             showConfirmationModal('Delete Permanently?', 'This will permanently delete this shift and ALL associated schedules and assignments. This cannot be undone.', () => {
@@ -3408,6 +3532,7 @@
                 currentData.assignments = currentData.assignments.filter(a => !schedIds.includes(a.scheduleId));
                 currentData.overtimeSignups = currentData.overtimeSignups.filter(s => s.shiftId !== id);
                 currentData.employees.forEach(e => { if(e.defaultShift === id) e.defaultShift = ''; });
+                logAction('Delete Shift', `Permanently deleted shift ID ${id}`);
                 loadAdminSection('shift', 'archivedShiftsTab');
                 refreshCurrentTab('calendar');
             });
@@ -3493,9 +3618,12 @@
             container.addEventListener('dragover', e => { e.preventDefault(); const afterElement = getDragAfterElement(container, e.clientY, '.schedule-row'); const draggable = container.querySelector('.dragging'); if(draggable) { if(afterElement == null) container.appendChild(draggable); else container.insertBefore(draggable, afterElement); } });
         }
         function showShiftSelectionForNewSchedule() { const html = currentData.shifts.filter(s=>!s.archived).sort((a,b)=>(a.order||99)-(b.order||99)).map(s => `<button class="btn btn-secondary" style="margin:5px; border-color:${s.color}" onclick="createNewScheduleForShift('${s.id}')">${s.name}</button>`).join(''); createModal('Select Shift', html); }
-        function createNewScheduleForShift(shiftId) { const shift = currentData.shifts.find(s => s.id === shiftId); const count = currentData.schedules.filter(s => s.shiftId === shiftId).length + 1; currentData.schedules.push({ id: generateId(), name: `${shift.name} Sched ${count}`, shiftId, workDays: [1,2,3,4,5], archived: false, order: currentData.schedules.length + 1 }); showManageSchedulesModal('activeSched'); }
-        function saveManagedSchedules() { document.querySelectorAll('.schedule-name-input').forEach(input => { const s = currentData.schedules.find(x => x.id === input.dataset.scheduleId); if(s) s.name = input.value; }); document.querySelectorAll('.work-day-checkbox').forEach(cb => { const s = currentData.schedules.find(x => x.id === cb.dataset.scheduleId); if(s) { if(!s.workDays) s.workDays = []; const d = parseInt(cb.dataset.day); if(cb.checked && !s.workDays.includes(d)) s.workDays.push(d); if(!cb.checked && s.workDays.includes(d)) s.workDays = s.workDays.filter(x => x !== d); } }); alert('Saved'); closeModal(); refreshCurrentTab('calendar'); }
-        function archiveSchedule(id) { showArchiveModal('Archive Schedule', 'Enter effective archive date (removes assignments on and after this date):', (date) => { 
+        function createNewScheduleForShift(shiftId) { const shift = currentData.shifts.find(s => s.id === shiftId); const count = currentData.schedules.filter(s => s.shiftId === shiftId).length + 1; currentData.schedules.push({ id: generateId(), name: `${shift.name} Sched ${count}`, shiftId, workDays: [1,2,3,4,5], archived: false, order: currentData.schedules.length + 1 }); logAction('Create Schedule', `Created new schedule`, currentData.schedules[currentData.schedules.length-1]); showManageSchedulesModal('activeSched'); }
+        function saveManagedSchedules() { document.querySelectorAll('.schedule-name-input').forEach(input => { const s = currentData.schedules.find(x => x.id === input.dataset.scheduleId); if(s) s.name = input.value; }); document.querySelectorAll('.work-day-checkbox').forEach(cb => { const s = currentData.schedules.find(x => x.id === cb.dataset.scheduleId); if(s) { if(!s.workDays) s.workDays = []; const d = parseInt(cb.dataset.day); if(cb.checked && !s.workDays.includes(d)) s.workDays.push(d); if(!cb.checked && s.workDays.includes(d)) s.workDays = s.workDays.filter(x => x !== d); } }); logAction('Update Schedules', 'Saved changes to schedules'); alert('Saved'); closeModal(); refreshCurrentTab('calendar'); }
+        function archiveSchedule(id) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
+            showArchiveModal('Archive Schedule', 'Enter effective archive date (removes assignments on and after this date):', (date) => { 
             const s = currentData.schedules.find(x => x.id === id); 
             s.archived = true; 
             s.archivedAt = date; 
@@ -3503,10 +3631,11 @@
                 if (a.scheduleId === id && a.date >= date) return false;
                 return true;
             });
+            logAction('Archive Schedule', `Archived schedule`, s);
             showManageSchedulesModal('activeSched'); 
             refreshCurrentTab('calendar'); 
         }, () => showManageSchedulesModal('activeSched')); }
-        function restoreSchedule(id) { const s = currentData.schedules.find(x => x.id === id); if(s) { s.archived = false; showManageSchedulesModal('archivedSched'); refreshCurrentTab('calendar'); } }
+        function restoreSchedule(id) { const s = currentData.schedules.find(x => x.id === id); if(s) { s.archived = false; logAction('Restore Schedule', `Restored schedule`, s); showManageSchedulesModal('archivedSched'); refreshCurrentTab('calendar'); } }
         
         function deleteSchedulePermanently(id) {
             if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot permanently delete items.");
@@ -3514,6 +3643,7 @@
                 currentData.schedules = currentData.schedules.filter(s => s.id !== id);
                 currentData.assignments = currentData.assignments.filter(a => a.scheduleId !== id);
                 currentData.overtimeSignups = currentData.overtimeSignups.filter(s => s.scheduleId !== id);
+                logAction('Delete Schedule', `Permanently deleted schedule ID ${id}`);
                 showManageSchedulesModal('archivedSched');
                 refreshCurrentTab('calendar');
             });
@@ -3565,13 +3695,17 @@
             createModal('Location Manager', html);
         }
 
-        function showAddLocationModal() { showCustomPrompt('New Location Name', '', (n) => { if(n) { globalData.locations.push(new Location(n)); showLocationManager(); updateLocationDropdown(); }}); }
-        function showEditLocationModal(id) { const l = globalData.locations.find(x=>x.id===id); showCustomPrompt('Rename', l.name, (n) => { if(n) { l.name = n; showLocationManager(); updateLocationDropdown(); }}); }
-        function archiveLocation(id) { showConfirmationModal('Archive?', 'Archive this location?', () => { const l = globalData.locations.find(x=>x.id===id); l.archived=true; l.archivedAt=getTodayDateString(); showLocationManager(); updateLocationDropdown(); }); }
-        function restoreLocation(id) { const l = globalData.locations.find(x=>x.id===id); l.archived=false; showLocationManager(); updateLocationDropdown(); }
+        function showAddLocationModal() { showCustomPrompt('New Location Name', '', (n) => { if(n) { globalData.locations.push(new Location(n)); logAction('Add Location', `Added location: ${n}`, globalData.locations[globalData.locations.length-1]); showLocationManager(); updateLocationDropdown(); }}); }
+        function showEditLocationModal(id) { const l = globalData.locations.find(x=>x.id===id); showCustomPrompt('Rename', l.name, (n) => { if(n) { l.name = n; logAction('Rename Location', `Renamed location to ${n}`, l); showLocationManager(); updateLocationDropdown(); }}); }
+        function archiveLocation(id) { 
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            if (role === ROLES.EMPLOYEE || role === ROLES.GUEST) return alert("Access Denied.");
+            showConfirmationModal('Archive?', 'Archive this location?', () => { const l = globalData.locations.find(x=>x.id===id); l.archived=true; l.archivedAt=getTodayDateString(); logAction('Archive Location', `Archived location ${l.name}`, l); showLocationManager(); updateLocationDropdown(); }); }
+        function restoreLocation(id) { const l = globalData.locations.find(x=>x.id===id); l.archived=false; logAction('Restore Location', `Restored location ${l.name}`, l); showLocationManager(); updateLocationDropdown(); }
         function deleteLocationPermanently(id) { 
             if (currentUser && currentUser.role === ROLES.ADMIN) return alert("Admin Restricted: Cannot permanently delete items.");
             showConfirmationModal('Delete?', 'Permanently delete this location and all its data?', () => {
+                logAction('Delete Location', `Permanently deleted location ID ${id}`); // Global log
                 globalData.locations = globalData.locations.filter(l => l.id !== id);
                 showLocationManager();
                 updateLocationDropdown();
@@ -3595,7 +3729,172 @@
             if (!currentData) return alert('Please select a location first.'); 
             createModal('Edit Title', `<div class="form-group"><label>New Title</label><input type="text" id="editTitleInput" value="${currentData.config.title}"></div><div class="action-buttons"><button class="btn btn-primary" onclick="confirmEditTitle()">Save</button><button class="btn btn-secondary" onclick="closeModal()">Cancel</button></div>`); 
         }
-        function confirmEditTitle() { const newTitle = document.getElementById('editTitleInput').value; if (newTitle) { currentData.config.title = newTitle; document.getElementById('mainTitle').textContent = newTitle; closeModal(); } }
+        function confirmEditTitle() { const newTitle = document.getElementById('editTitleInput').value; if (newTitle) { currentData.config.title = newTitle; document.getElementById('mainTitle').textContent = newTitle; logAction('Edit Title', `Changed title to ${newTitle}`); closeModal(); } }
 
+        function showSystemLogs() {
+            if (!currentData) return;
+            
+            // Collect all logs
+            let allLogs = [];
+            
+            // Helper to add logs with reference for deletion
+            const addLogs = (sourceArray, source, sourceName) => {
+                if (sourceArray && Array.isArray(sourceArray)) {
+                    sourceArray.forEach(l => {
+                        allLogs.push({ ...l, source, sourceName, _ref: l, _parent: sourceArray });
+                    });
+                }
+            };
+            
+            // 1. System Logs
+            addLogs(currentData.logs, 'System', 'General');
+            
+            // 2. Employee Logs
+            currentData.employees.forEach(e => addLogs(e.logs, 'Employee', e.name));
+            
+            // 3. Shift Logs
+            currentData.shifts.forEach(s => addLogs(s.logs, 'Shift', s.name));
+            
+            // 4. Schedule Logs
+            currentData.schedules.forEach(s => addLogs(s.logs, 'Schedule', s.name));
+
+            // Sort newest first
+            allLogs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            // Store in window for filtering
+            window.currentSystemLogs = allLogs;
+            
+            renderSystemLogsModal();
+        }
+
+        function renderSystemLogsModal(filterType = 'All', searchTerm = '') {
+            let logs = window.currentSystemLogs || [];
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const canDelete = (role === ROLES.OWNER || role === ROLES.ADMIN);
+            
+            if (filterType !== 'All') {
+                logs = logs.filter(l => l.source === filterType);
+            }
+            
+            if (searchTerm) {
+                const term = searchTerm.toLowerCase();
+                logs = logs.filter(l => 
+                    l.user.toLowerCase().includes(term) || 
+                    l.action.toLowerCase().includes(term) || 
+                    l.details.toLowerCase().includes(term) ||
+                    l.sourceName.toLowerCase().includes(term)
+                );
+            }
+
+            let html = `
+                <div style="display:flex; gap:15px; margin-bottom:15px;">
+                    <div style="display:flex; align-items:flex-end;">
+                        ${canDelete ? `<button class="btn btn-danger" onclick="clearFilteredLogs()">Clear Listed Logs</button>` : ''}
+                    </div>
+                    <div class="filter-group">
+                        <label>Source</label>
+                        <select id="logFilterType" onchange="updateLogView()">
+                            <option value="All" ${filterType === 'All' ? 'selected' : ''}>All Sources</option>
+                            <option value="System" ${filterType === 'System' ? 'selected' : ''}>System (General)</option>
+                            <option value="Employee" ${filterType === 'Employee' ? 'selected' : ''}>Employees</option>
+                            <option value="Shift" ${filterType === 'Shift' ? 'selected' : ''}>Shifts</option>
+                            <option value="Schedule" ${filterType === 'Schedule' ? 'selected' : ''}>Schedules</option>
+                        </select>
+                    </div>
+                    <div class="filter-group" style="flex:1;">
+                        <label>Search</label>
+                        <input type="text" id="logSearchTerm" value="${searchTerm}" onkeyup="updateLogView()" placeholder="Search user, action, details...">
+                    </div>
+                </div>
+                <div class="table-container" style="max-height:600px; overflow-y:auto;">
+                    <table>
+                        <thead><tr><th>Timestamp</th><th>Source</th><th>User</th><th>Action</th><th>Details</th>${canDelete ? '<th>Action</th>' : ''}</tr></thead>
+                        <tbody>`;
+            
+            if (logs.length === 0) {
+                html += `<tr><td colspan="${canDelete ? 6 : 5}" style="text-align:center; color:#64748b; padding:20px;">No logs found matching criteria.</td></tr>`;
+            } else {
+                logs.slice(0, 500).forEach((l, index) => { // Limit display for performance
+                    html += `<tr>
+                        <td style="white-space:nowrap; font-size:11px;">${new Date(l.timestamp).toLocaleString()}</td>
+                        <td><span class="assignment-tag" style="background:#e2e8f0; color:#475467;">${l.source}: ${l.sourceName}</span></td>
+                        <td>${l.user}</td>
+                        <td style="font-weight:600;">${l.action}</td>
+                        <td style="font-size:12px;">${l.details}</td>
+                        ${canDelete ? `<td><button class="action-bubble delete" onclick="deleteLogEntry('${l.timestamp}', '${l.action}')">Delete</button></td>` : ''}
+                    </tr>`;
+                });
+            }
+            html += `</tbody></table></div>
+            <div style="margin-top:10px; font-size:11px; color:#64748b; text-align:right;">Showing top 500 results</div>`;
+            
+            // If modal exists, update content, else create
+            const container = document.getElementById('systemLogsContent');
+            if (container) {
+                container.innerHTML = html;
+            } else {
+                createModal('System Logs', `<div id="systemLogsContent">${html}</div>`, '1000px');
+            }
+        }
+
+        window.updateLogView = function() {
+            const type = document.getElementById('logFilterType').value;
+            const term = document.getElementById('logSearchTerm').value;
+            renderSystemLogsModal(type, term);
+        };
+
+        function deleteLogEntry(timestamp, action) {
+            // Find the log in the current global list to get its parent reference
+            const logItem = window.currentSystemLogs.find(l => l.timestamp === timestamp && l.action === action);
+            if (logItem && logItem._parent) {
+                const idx = logItem._parent.indexOf(logItem._ref);
+                if (idx > -1) {
+                    logItem._parent.splice(idx, 1);
+                    showSystemLogs(); // Re-aggregate and render
+                }
+            }
+        }
+
+        function clearFilteredLogs() {
+            if (!confirm("Are you sure you want to delete all currently listed logs? This cannot be undone.")) return;
+            
+            // Get current filter state to know what is being displayed
+            const type = document.getElementById('logFilterType').value;
+            const term = document.getElementById('logSearchTerm').value;
+            
+            // We need to re-run the filter logic on the currentSystemLogs to find what to delete
+            // Or simply iterate the DOM? Better to use the data source.
+            // Since renderSystemLogsModal filters `window.currentSystemLogs`, we can do the same here.
+            let logsToDelete = window.currentSystemLogs;
+
+            if (type !== 'All') logsToDelete = logsToDelete.filter(l => l.source === type);
+            if (term) {
+                const t = term.toLowerCase();
+                logsToDelete = logsToDelete.filter(l => 
+                    l.user.toLowerCase().includes(t) || 
+                    l.action.toLowerCase().includes(t) || 
+                    l.details.toLowerCase().includes(t) ||
+                    l.sourceName.toLowerCase().includes(t)
+                );
+            }
+
+            // Delete them
+            logsToDelete.forEach(logItem => {
+                if (logItem._parent) {
+                    const idx = logItem._parent.indexOf(logItem._ref);
+                    if (idx > -1) logItem._parent.splice(idx, 1);
+                }
+            });
+
+            showSystemLogs();
+        }
+    </script>
+</body>             const idx = logItem._parent.indexOf(logItem._ref);
+                    if (idx > -1) logItem._parent.splice(idx, 1);
+                }
+            });
+
+            showSystemLogs();
+        }
     </script>
 </body>
