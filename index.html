@@ -486,6 +486,12 @@
           measurementId: "G-Z56QEFLPCB"
         };
         firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        // This sends a tiny piece of data to Firebase as soon as the page loads
+db.ref('connection_test').set({
+    message: "Cloud Connection Successful!",
+    timestamp: new Date().toLocaleString()
+});
 
         // --- Constants ---
         const ASSIGNMENT_TYPES = { REGULAR: 'Regular Work Schedule', OVERTIME_V: 'Voluntary Overtime', OVERTIME_M: 'Mandatory Overtime', ON_CALL: 'On-Call Work Schedule', VACATION: 'Vacation', VACATION_SEGMENT: 'Vacation Segment', RDO: 'Regular Day Off', SCDO: 'Schedule Change Day Off', SDO: 'Scheduled Day Off', TRAINING: 'Training' };
@@ -3330,3 +3336,4 @@
 
     </script>
 </body>
+
