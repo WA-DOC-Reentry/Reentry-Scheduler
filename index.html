@@ -492,6 +492,8 @@ db.ref('connection_test').set({
     message: "Cloud Connection Successful!",
     timestamp: new Date().toLocaleString()
 });
+        console.log("The Scheduler is awake!");
+console.log("Database variable:", db);
 
         // --- Constants ---
         const ASSIGNMENT_TYPES = { REGULAR: 'Regular Work Schedule', OVERTIME_V: 'Voluntary Overtime', OVERTIME_M: 'Mandatory Overtime', ON_CALL: 'On-Call Work Schedule', VACATION: 'Vacation', VACATION_SEGMENT: 'Vacation Segment', RDO: 'Regular Day Off', SCDO: 'Schedule Change Day Off', SDO: 'Scheduled Day Off', TRAINING: 'Training' };
@@ -3336,4 +3338,5 @@ db.ref('connection_test').set({
 
     </script>
 </body>
+
 
