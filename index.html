@@ -2877,6 +2877,7 @@
         function saveListEmployees(listType) {
             const checkboxes = document.querySelectorAll('.list-emp-check');
             currentData.overtimeLists[listType] = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+            logAction('Update OT List', `Updated ${listType} overtime list`);
             if (listType === 'voluntary') showVoluntaryOTListModal();
             else showMandatoryOTListModal();
         }
