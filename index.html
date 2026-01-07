@@ -641,17 +641,28 @@
 
         // --- Firebase Functions ---
         function saveToFirebase() {
-            // 1. Identify the DATA (Make sure this variable name matches your 3000-line code)
-            const dataToSync = globalData; 
+            const btn = document.getElementById('saveBtn');
+            if(btn) btn.textContent = 'Saving...';
 
-            // 2. Identify the LOCATION (This must match your Firebase folder name)
-            db.ref('scheduleData').set(dataToSync)
+            // 1. Find where the current location sits in the main list
+            const locIndex = globalData.locations.findIndex(l => l.id === globalData.currentLocation);
+            
+            // 2. Force the current employee/schedule data into that location
+            if (locIndex !== -1 && currentData) {
+                globalData.locations[locIndex].data = currentData;
+            }
+
+            // 3. Now send the FULL globalData (which now includes your employees)
+            db.ref('scheduleData').set(globalData)
             .then(() => {
-                console.log("Success: Data is now in the Cloud!");
+                console.log("Cloud Update Successful!");
+                if(btn) btn.textContent = 'Save Changes';
                 alert("Synced to Firebase successfully!");
             })
             .catch((error) => {
+                if(btn) btn.textContent = 'Save Changes';
                 console.error("Cloud Save Failed:", error);
+                alert("Save failed: " + error.message);
             });
         }
 
@@ -3928,6 +3939,66 @@
                     l.user.toLowerCase().includes(t) || 
                     l.action.toLowerCase().includes(t) || 
                     l.details.toLowerCase().includes(t) ||
+                    l.sourceName.toLowerCase().includes(t)
+                );
+            }
+
+            // Delete them
+            logsToDelete.forEach(logItem => {
+                if (logItem._parent) {
+                    const idx = logItem._parent.indexOf(logItem._ref);
+                    if (idx > -1) logItem._parent.splice(idx, 1);
+                }
+            });
+
+            showSystemLogs();
+        }
+    </script>
+</body>     // Delete them
+            logsToDelete.forEach(logItem => {
+                if (logItem._parent) {
+                    const idx = logItem._parent.indexOf(logItem._ref);
+                    if (idx > -1) logItem._parent.splice(idx, 1);
+                }
+            });
+
+            showSystemLogs();
+        }
+    </script>
+</body>     // Delete them
+            logsToDelete.forEach(logItem => {
+                if (logItem._parent) {
+                    const idx = logItem._parent.indexOf(logItem._ref);
+                    if (idx > -1) logItem._parent.splice(idx, 1);
+                }
+            });
+
+            showSystemLogs();
+        }
+    </script>
+</body>     // Delete them
+            logsToDelete.forEach(logItem => {
+                if (logItem._parent) {
+                    const idx = logItem._parent.indexOf(logItem._ref);
+                    if (idx > -1) logItem._parent.splice(idx, 1);
+                }
+            });
+
+            showSystemLogs();
+        }
+    </script>
+</body>     // Delete them
+            logsToDelete.forEach(logItem => {
+                if (logItem._parent) {
+                    const idx = logItem._parent.indexOf(logItem._ref);
+                    if (idx > -1) logItem._parent.splice(idx, 1);
+                }
+            });
+
+            showSystemLogs();
+        }
+    </script>
+</body>             l.details.toLowerCase().includes(t) ||
                     l.sourceName.toLowerCase().includes(t)
                 );
             }
