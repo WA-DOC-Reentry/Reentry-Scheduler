@@ -454,6 +454,7 @@
             <div style="display:flex; align-items:center; gap:15px;">
                 <button id="loginBtn" class="btn btn-secondary btn-sm" onclick="showLoginModal()">Login</button>
                 <button id="saveBtn" class="btn btn-success btn-sm" onclick="saveToFirebase()">Save Changes</button>
+                <button class="btn btn-warning" onclick="openTutorials()" style="font-weight:800; border:2px solid #fff; box-shadow:0 2px 5px rgba(0,0,0,0.2);">🎓 TUTORIALS</button>
                 <button id="headerPrintBtn" class="btn btn-primary btn-sm hidden" onclick="promptPrint('calendarContainer', 'Schedule Calendar')">Print Schedule</button>
                 <button class="btn btn-secondary btn-sm" onclick="goHome()">Home</button>
                 <div class="date-display"><span id="currentDate"></span></div>
@@ -3976,6 +3977,111 @@
             });
 
             showSystemLogs();
+        }
+
+        function openTutorials() {
+            const w = window.open('', '_blank');
+            w.document.write(`
+                <html>
+                <head>
+                    <title>System Tutorials & Guide</title>
+                    <style>
+                        body { font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.6; color: #334155; background: #f1f5f9; margin: 0; display: flex; }
+                        .sidebar { width: 280px; background: #1e293b; color: white; position: fixed; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
+                        .sidebar-header { padding: 20px; background: #0f172a; font-size: 1.2rem; font-weight: bold; border-bottom: 1px solid #334155; }
+                        .nav-item { padding: 15px 20px; color: #94a3b8; cursor: pointer; border-bottom: 1px solid #334155; transition: all 0.2s; font-size: 0.95rem; }
+                        .nav-item:hover { background: #334155; color: white; padding-left: 25px; }
+                        .content { margin-left: 280px; padding: 40px; width: 100%; max-width: 1000px; }
+                        .section { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 40px; scroll-margin-top: 20px; }
+                        h1 { color: #0f172a; border-bottom: 3px solid #3b82f6; padding-bottom: 10px; margin-top: 0; }
+                        h2 { color: #3b82f6; margin-top: 30px; font-size: 1.4rem; }
+                        p { margin-bottom: 15px; font-size: 1.05rem; }
+                        .visual-box { background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
+                        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; color: white; }
+                        .tag.blue { background: #3b82f6; } .tag.green { background: #10b981; } .tag.red { background: #ef4444; }
+                        .btn-sim { display: inline-block; padding: 6px 12px; background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 4px; color: #334155; font-weight: bold; font-size: 0.85rem; }
+                        .btn-sim.primary { background: #3b82f6; color: white; border-color: #2563eb; }
+                        ul { padding-left: 20px; }
+                        li { margin-bottom: 8px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="sidebar">
+                        <div class="sidebar-header">📖 User Guide</div>
+                        <div class="nav-item" onclick="document.getElementById('login').scrollIntoView({behavior: 'smooth'})">1. Login & Roles</div>
+                        <div class="nav-item" onclick="document.getElementById('calendar').scrollIntoView({behavior: 'smooth'})">2. Schedule Calendar</div>
+                        <div class="nav-item" onclick="document.getElementById('roster').scrollIntoView({behavior: 'smooth'})">3. Roster Management</div>
+                        <div class="nav-item" onclick="document.getElementById('overtime').scrollIntoView({behavior: 'smooth'})">4. Overtime System</div>
+                        <div class="nav-item" onclick="document.getElementById('vacation').scrollIntoView({behavior: 'smooth'})">5. Vacation Segments</div>
+                        <div class="nav-item" onclick="document.getElementById('admin').scrollIntoView({behavior: 'smooth'})">6. Admin Settings</div>
+                    </div>
+                    <div class="content">
+                        <div id="login" class="section">
+                            <h1>1. Login & Roles</h1>
+                            <p>The system uses a Role-Based Access Control system. When an employee is added to the roster, credentials are auto-generated.</p>
+                            <div class="visual-box">
+                                <strong>Roles:</strong><br><br>
+                                <span class="tag red">Owner</span> Full access to everything, including logs and other Owner accounts.<br><br>
+                                <span class="tag blue">Admin</span> Can manage schedules and employees, but cannot delete logs or edit Owners.<br><br>
+                                <span class="tag green">Employee</span> View-only access to the schedule. Can sign up for Overtime.
+                            </div>
+                            <p><strong>Note:</strong> Employees can change their password by clicking "View Account" on the Home Screen.</p>
+                        </div>
+
+                        <div id="calendar" class="section">
+                            <h1>2. Schedule Calendar</h1>
+                            <p>The main workspace for managing daily operations. You can view by Week, Month, or Day.</p>
+                            <h2>Quick Assign (Drag & Drop)</h2>
+                            <p>Click the <strong>Quick Assign</strong> button in the top right to open the sidebar. Select an employee, then drag a colored bubble onto the calendar.</p>
+                            <div class="visual-box">
+                                <span class="btn-sim primary">Quick Assign ▶</span> &nbsp; ➝ &nbsp; <span class="tag blue">Regular</span> (Drag me!) &nbsp; ➝ &nbsp; 📅 Calendar Cell
+                            </div>
+                            <h2>Managing Assignments</h2>
+                            <p>Click any cell on the calendar to open the <strong>Assignment Manager</strong>. From here you can:</p>
+                            <ul>
+                                <li>Add multiple employees to one slot.</li>
+                                <li>Add notes to assignments.</li>
+                                <li>Override "RDO" (Regular Day Off) blocks if necessary.</li>
+                            </ul>
+                        </div>
+
+                        <div id="roster" class="section">
+                            <h1>3. Roster Management</h1>
+                            <p>Manage your team from the Roster tab. You can Add, Edit, Archive, or Hide employees.</p>
+                            <p><strong>Hidden Employees:</strong> Use the "Hide from Roster" checkbox in the Edit screen to keep an employee in the system (so they can login) but hide them from the daily schedule views.</p>
+                        </div>
+
+                        <div id="overtime" class="section">
+                            <h1>4. Overtime System</h1>
+                            <p>A complete system for tracking Voluntary and Mandatory overtime lists.</p>
+                            <h2>Signup Calendar</h2>
+                            <p>Employees can sign up for shifts by clicking on the <strong>Overtime</strong> tile. They can select multiple shifts and click "Sign Up Selected".</p>
+                            <h2>Approval Process</h2>
+                            <p>Admins/Owners can view the <strong>Volunteers</strong> list for any shift. Click "Approve" to automatically assign the employee to the schedule and log the action.</p>
+                            <div class="visual-box">
+                                Statuses: <span class="tag green">Approved</span> <span class="tag red">Declined</span> <span style="background:#f1f5f9; color:#94a3b8; padding:2px 8px; border-radius:4px; border:1px solid #cbd5e1;">Cancelled</span>
+                            </div>
+                        </div>
+
+                        <div id="vacation" class="section">
+                            <h1>5. Vacation Segments</h1>
+                            <p>Use the <strong>Vacation Segments</strong> tab to manage long-term leave. Creating a segment here automatically populates the main schedule.</p>
+                            <p><strong>Smart Filling:</strong> The system is smart enough to only assign vacation hours to scheduled work days, skipping RDOs automatically.</p>
+                        </div>
+
+                        <div id="admin" class="section">
+                            <h1>6. Admin Settings</h1>
+                            <p>Access global settings via the "Admin Settings" tile on the Home Screen.</p>
+                            <ul>
+                                <li><strong>System Logs:</strong> View a detailed audit trail of all actions (Login, Delete, Assign, etc.).</li>
+                                <li><strong>Manage Locations:</strong> Create and switch between different facility locations.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `);
+            w.document.close();
         }
     </script>
 </body>
