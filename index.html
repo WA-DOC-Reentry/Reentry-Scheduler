@@ -451,7 +451,7 @@
         <div class="header" style="position: relative;">
             <div class="title-section"><h1 id="mainTitle" onclick="goHome()" style="cursor: pointer;">Weekly Schedule</h1></div>
             <div id="currentTabTitle" style="position: absolute; left: 50%; transform: translateX(-50%); font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">HOME</div>
-            <div style="display:flex; align-items:center; gap:15px;">
+            <div style="display:flex; align-items:center; gap:15px; position: relative; z-index: 20;">
                 <button id="loginBtn" class="btn btn-secondary btn-sm" onclick="showLoginModal()">Login</button>
                 <button id="saveBtn" class="btn btn-success btn-sm" onclick="saveToFirebase()">Save Changes</button>
                 <button class="btn btn-warning" onclick="openTutorials()" style="font-weight:800; border:2px solid #fff; box-shadow:0 2px 5px rgba(0,0,0,0.2);">🎓 TUTORIALS</button>
@@ -908,6 +908,10 @@
             html += `<div class="home-tile ${lockAdmin}" onclick="showAdminPanel()">`;
             html += '<div class="home-tile-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">⚙️</div>';
             html += '<h3 class="home-tile-title">Admin Settings</h3>';
+            html += '</div>';
+            html += '<div class="home-tile" onclick="openTutorials()">';
+            html += '<div class="home-tile-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">🎓</div>';
+            html += '<h3 class="home-tile-title">Tutorials</h3>';
             html += '</div>';
             html += '</div>';
             html += '</div>';
