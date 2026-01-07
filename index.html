@@ -644,20 +644,21 @@
             const btn = document.getElementById('saveBtn');
             if(btn) btn.textContent = 'Saving...';
 
-            // 1. Find where the current location sits in the main list
-            const locIndex = globalData.locations.findIndex(l => l.id === globalData.currentLocation);
-            
-            // 2. Force the current employee/schedule data into that location
-            if (locIndex !== -1 && currentData) {
-                globalData.locations[locIndex].data = currentData;
+            // NEW LOGIC: Move the "current" work into the "global" storage
+            if (globalData.currentLocation && currentData) {
+                const locIndex = globalData.locations.findIndex(l => l.id === globalData.currentLocation);
+                if (locIndex !== -1) {
+                    // This line "packs" your employees into the global box
+                    globalData.locations[locIndex].data = currentData;
+                }
             }
 
-            // 3. Now send the FULL globalData (which now includes your employees)
+            // Now send the FULL package to Firebase
             db.ref('scheduleData').set(globalData)
             .then(() => {
                 console.log("Cloud Update Successful!");
                 if(btn) btn.textContent = 'Save Changes';
-                alert("Synced to Firebase successfully!");
+                alert("Synced to Firebase successfully! All employees are now in the cloud.");
             })
             .catch((error) => {
                 if(btn) btn.textContent = 'Save Changes';
