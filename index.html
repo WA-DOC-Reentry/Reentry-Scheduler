@@ -1838,8 +1838,6 @@
                     <td>
                         ${canViewSchedule ? `<button class="action-bubble view" onclick="viewEmployeeSchedule('${e.id}')">View Schedule</button>` : ''}
                         ${canManageAccounts && canViewThisAccount ? `<button class="action-bubble view" style="background:#f3e8ff; color:#6b21a8; border-color:#d8b4fe;" onclick="showEmployeeAccountModal('${e.id}')">Account</button>` : ''}
-                        ${canEdit ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
-                        ${canEdit ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
                         ${canViewThisAccount ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
                         ${canViewThisAccount ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
                     </td>
@@ -2738,6 +2736,17 @@
             <table><thead><tr><th>Rank</th><th>Name</th><th>Seniority</th><th>Notes</th><th>Action</th></tr></thead><tbody>`; 
             
             let employees = currentData.employees.filter(e => !e.archived);
+            
+            // Filter by Voluntary List configuration
+            // If list is defined, only show employees in the list. 
+            // Note: If list is empty/undefined, we might show none or all. Based on Manage modal logic, it defaults to full-time if empty.
+            // Here we strictly follow the list if it has entries, or if it's explicitly set.
+            if (currentData.overtimeLists.voluntary && currentData.overtimeLists.voluntary.length > 0) {
+                employees = employees.filter(e => currentData.overtimeLists.voluntary.includes(e.id));
+            } else if (currentData.overtimeLists.voluntary && currentData.overtimeLists.voluntary.length === 0) {
+                employees = [];
+            }
+
             if (currentVoluntaryFilter !== 'all') employees = employees.filter(e => e.type === currentVoluntaryFilter);
             employees.sort((a,b) => { const diff = new Date(a.seniorityDate) - new Date(b.seniorityDate); return diff !== 0 ? diff : a.name.localeCompare(b.name); });
 
@@ -2802,6 +2811,14 @@
 
             shifts.forEach(shift => { 
                 let shiftEmps = currentData.employees.filter(e => e.defaultShift === shift.id && !e.archived);
+                
+                // Filter by Mandatory List configuration
+                if (currentData.overtimeLists.mandatory && currentData.overtimeLists.mandatory.length > 0) {
+                    shiftEmps = shiftEmps.filter(e => currentData.overtimeLists.mandatory.includes(e.id));
+                } else if (currentData.overtimeLists.mandatory && currentData.overtimeLists.mandatory.length === 0) {
+                    shiftEmps = [];
+                }
+
                 if (currentMandatoryFilter !== 'all') shiftEmps = shiftEmps.filter(e => e.type === currentMandatoryFilter);
                 shiftEmps.sort((a,b) => { const diff = new Date(b.seniorityDate) - new Date(a.seniorityDate); return diff !== 0 ? diff : b.name.localeCompare(a.name); });
                 
@@ -4071,6 +4088,59 @@
                             <h1>5. Vacation Segments</h1>
                             <p>Use the <strong>Vacation Segments</strong> tab to manage long-term leave. Creating a segment here automatically populates the main schedule.</p>
                             <p><strong>Smart Filling:</strong> The system is smart enough to only assign vacation hours to scheduled work days, skipping RDOs automatically.</p>
+                        </div>
+
+                        <div id="admin" class="section">
+                            <h1>6. Admin Settings</h1>
+                            <p>Access global settings via the "Admin Settings" tile on the Home Screen.</p>
+                            <ul>
+                                <li><strong>System Logs:</strong> View a detailed audit trail of all actions (Login, Delete, Assign, etc.).</li>
+                                <li><strong>Manage Locations:</strong> Create and switch between different facility locations.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `);
+            w.document.close();
+        }
+    </script>
+</body>
+</html>
+                        <div id="admin" class="section">
+                            <h1>6. Admin Settings</h1>
+                            <p>Access global settings via the "Admin Settings" tile on the Home Screen.</p>
+                            <ul>
+                                <li><strong>System Logs:</strong> View a detailed audit trail of all actions (Login, Delete, Assign, etc.).</li>
+                                <li><strong>Manage Locations:</strong> Create and switch between different facility locations.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `);
+            w.document.close();
+        }
+    </script>
+</body>
+</html>
+                        <div id="admin" class="section">
+                            <h1>6. Admin Settings</h1>
+                            <p>Access global settings via the "Admin Settings" tile on the Home Screen.</p>
+                            <ul>
+                                <li><strong>System Logs:</strong> View a detailed audit trail of all actions (Login, Delete, Assign, etc.).</li>
+                                <li><strong>Manage Locations:</strong> Create and switch between different facility locations.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `);
+            w.document.close();
+        }
+    </script>
+</body>
+</html>                     <p><strong>Smart Filling:</strong> The system is smart enough to only assign vacation hours to scheduled work days, skipping RDOs automatically.</p>
                         </div>
 
                         <div id="admin" class="section">
