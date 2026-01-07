@@ -3954,17 +3954,5 @@
             showSystemLogs();
         }
     </script>
-</body>     // Delete them
-            logsToDelete.forEach(logItem => {
-                if (logItem._parent) {
-                    const idx = logItem._parent.indexOf(logItem._ref);
-                    if (idx > -1) logItem._parent.splice(idx, 1);
-                }
-            });
-
-            showSystemLogs();
-        }
-    </script>
 </body>
 </html>
-</body>
