@@ -451,7 +451,7 @@
         <div class="header" style="position: relative;">
             <div class="title-section"><h1 id="mainTitle" onclick="goHome()" style="cursor: pointer;">Weekly Schedule</h1></div>
             <div id="currentTabTitle" style="position: absolute; left: 50%; transform: translateX(-50%); font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">HOME</div>
-            <div style="display:flex; align-items:center; gap:15px;">
+            <div style="display:flex; align-items:center; gap:15px; position: relative; z-index: 20;">
                 <button id="loginBtn" class="btn btn-secondary btn-sm" onclick="showLoginModal()">Login</button>
                 <button id="saveBtn" class="btn btn-success btn-sm" onclick="saveToFirebase()">Save Changes</button>
                 <button id="headerPrintBtn" class="btn btn-primary btn-sm hidden" onclick="promptPrint('calendarContainer', 'Schedule Calendar')">Print Schedule</button>
@@ -884,10 +884,10 @@
                                 <button class="btn btn-secondary" onclick="showMyAccountModal()">View Account</button>
                                 <button class="btn btn-danger" onclick="logout()">Log Out</button>
                             </div>
-                            <button class="btn btn-warning" onclick="openTutorials()" style="width:100%; font-weight:800; border:2px solid #fff; padding: 12px; font-size: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🎓 TUTORIALS & GUIDE</button>
+                            <button class="btn btn-warning" onclick="openTutorials()" style="width:100%; font-weight:800; border:2px solid #fff;">🎓 TUTORIALS</button>
                          </div>`;
             } else {
-                 html += `<button class="btn btn-warning" onclick="openTutorials()" style="font-weight:800; border:2px solid #fff; padding: 12px; font-size: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🎓 TUTORIALS & GUIDE</button>`;
+                 html += `<button class="btn btn-warning" onclick="openTutorials()" style="font-weight:800; border:2px solid #fff;">🎓 TUTORIALS</button>`;
             }
             html += '</div>';
             html += '</div>';
@@ -1841,8 +1841,6 @@
                     <td>
                         ${canViewSchedule ? `<button class="action-bubble view" onclick="viewEmployeeSchedule('${e.id}')">View Schedule</button>` : ''}
                         ${canManageAccounts && canViewThisAccount ? `<button class="action-bubble view" style="background:#f3e8ff; color:#6b21a8; border-color:#d8b4fe;" onclick="showEmployeeAccountModal('${e.id}')">Account</button>` : ''}
-                        ${canEdit ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
-                        ${canEdit ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
                         ${canViewThisAccount ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
                         ${canViewThisAccount ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
                     </td>
@@ -2741,6 +2739,17 @@
             <table><thead><tr><th>Rank</th><th>Name</th><th>Seniority</th><th>Notes</th><th>Action</th></tr></thead><tbody>`; 
             
             let employees = currentData.employees.filter(e => !e.archived);
+            
+            // Filter by Voluntary List configuration
+            // If list is defined, only show employees in the list. 
+            // Note: If list is empty/undefined, we might show none or all. Based on Manage modal logic, it defaults to full-time if empty.
+            // Here we strictly follow the list if it has entries, or if it's explicitly set.
+            if (currentData.overtimeLists.voluntary && currentData.overtimeLists.voluntary.length > 0) {
+                employees = employees.filter(e => currentData.overtimeLists.voluntary.includes(e.id));
+            } else if (currentData.overtimeLists.voluntary && currentData.overtimeLists.voluntary.length === 0) {
+                employees = [];
+            }
+
             if (currentVoluntaryFilter !== 'all') employees = employees.filter(e => e.type === currentVoluntaryFilter);
             employees.sort((a,b) => { const diff = new Date(a.seniorityDate) - new Date(b.seniorityDate); return diff !== 0 ? diff : a.name.localeCompare(b.name); });
 
@@ -2805,6 +2814,14 @@
 
             shifts.forEach(shift => { 
                 let shiftEmps = currentData.employees.filter(e => e.defaultShift === shift.id && !e.archived);
+                
+                // Filter by Mandatory List configuration
+                if (currentData.overtimeLists.mandatory && currentData.overtimeLists.mandatory.length > 0) {
+                    shiftEmps = shiftEmps.filter(e => currentData.overtimeLists.mandatory.includes(e.id));
+                } else if (currentData.overtimeLists.mandatory && currentData.overtimeLists.mandatory.length === 0) {
+                    shiftEmps = [];
+                }
+
                 if (currentMandatoryFilter !== 'all') shiftEmps = shiftEmps.filter(e => e.type === currentMandatoryFilter);
                 shiftEmps.sort((a,b) => { const diff = new Date(b.seniorityDate) - new Date(a.seniorityDate); return diff !== 0 ? diff : b.name.localeCompare(a.name); });
                 
@@ -2877,7 +2894,6 @@
         function saveListEmployees(listType) {
             const checkboxes = document.querySelectorAll('.list-emp-check');
             currentData.overtimeLists[listType] = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
-            logAction('Update OT List', `Updated ${listType} overtime list`);
             if (listType === 'voluntary') showVoluntaryOTListModal();
             else showMandatoryOTListModal();
         }
@@ -4008,8 +4024,6 @@
                         .tab-btn { padding: 20px 30px; color: #94a3b8; cursor: pointer; font-weight: bold; border-bottom: 4px solid transparent; transition: all 0.2s; }
                         .tab-btn.active { color: white; border-bottom-color: #3b82f6; background: #1e293b; }
                         .tab-btn:hover { color: white; background: #1e293b; }
-                        .tab-btn.locked { opacity: 0.5; cursor: not-allowed; position: relative; }
-                        .tab-btn.locked::after { content: '🔒'; position: absolute; right: 10px; top: 20px; font-size: 12px; }
 
                         .tab-content { display: none; height: 100%; overflow: hidden; }
                         .tab-content.active { display: block; }
@@ -4028,18 +4042,9 @@
                         .btn-sim.primary { background: #3b82f6; color: white; border-color: #2563eb; }
                         ul { padding-left: 20px; }
                         li { margin-bottom: 8px; }
-                        
-                        /* Mock UI Elements */
-                        .mock-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; max-width: 400px; margin: 20px auto; }
-                        .mock-cell { border: 1px solid #cbd5e1; height: 50px; background: white; border-radius: 4px; padding: 4px; font-size: 10px; }
-                        .mock-cell.active { background: #eff6ff; border-color: #3b82f6; }
                     </style>
                     <script>
                         function openTab(tabName) {
-                            if (tabName === 'admin' && !${isAdmin}) {
-                                alert('Access Denied: Admin privileges required.');
-                                return;
-                            }
                             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
                             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
                             document.getElementById(tabName).classList.add('active');
@@ -4051,7 +4056,7 @@
                     <div class="main-wrapper">
                         <div class="tab-header">
                             <div id="btn-employee" class="tab-btn active" onclick="openTab('employee')">Employee Guide</div>
-                            <div id="btn-admin" class="tab-btn ${!isAdmin ? 'locked' : ''}" onclick="openTab('admin')">Admin Guide</div>
+                            ${isAdmin ? `<div id="btn-admin" class="tab-btn" onclick="openTab('admin')">Admin Guide</div>` : ''}
                         </div>
 
                         <!-- EMPLOYEE TAB -->
@@ -4068,11 +4073,13 @@
                                     <div id="emp-login" class="section">
                                         <h1>1. Login & Account</h1>
                                         <p>Your credentials are provided by your administrator. To log in, click the <strong>Login</strong> button in the top header.</p>
-                                        <div class="visual-box"><button class="btn-sim">Login</button></div>
+                                        <h2>Changing Password</h2>
+                                        <p>Once logged in, you can change your password by clicking the <strong>View Account</strong> button on the Home Screen (next to the location selector).</p>
                                     </div>
                                     <div id="emp-schedule" class="section">
                                         <h1>2. Viewing Schedule</h1>
                                         <p>Click <strong>Schedule Calendar</strong> to view the team schedule. You can switch between Weekly and Monthly views using the dropdown in the controls bar.</p>
+                                        <p><strong>My Schedule:</strong> Go to the <strong>Roster</strong> tab and click "View Schedule" next to your name to see a personalized view of your hours.</p>
                                         <div class="visual-box">
                                             <span class="tag blue">Regular</span> Standard Shift &nbsp; <span class="tag green">Vacation</span> Approved Leave &nbsp; <span class="tag red">RDO</span> Regular Day Off
                                         </div>
@@ -4086,14 +4093,7 @@
                                             <li>Click on the shifts you want to work (they will turn blue).</li>
                                             <li>Click the green <strong>Sign Up Selected</strong> button at the bottom of the screen.</li>
                                         </ol>
-                                        <div class="visual-box">
-                                            <div class="mock-cal">
-                                                <div class="mock-cell">1</div><div class="mock-cell active">2<br>✓</div><div class="mock-cell">3</div>
-                                                <div class="mock-cell">4</div><div class="mock-cell">5</div><div class="mock-cell active">6<br>✓</div>
-                                                <div class="mock-cell">7</div>
-                                            </div>
-                                            <button class="btn-sim" style="background:#10b981; color:white;">Sign Up Selected (2)</button>
-                                        </div>
+                                        <p><strong>Status:</strong> You can check if you are Approved or Pending by clicking the "Volunteers" count bubble on any shift.</p>
                                     </div>
                                     <div id="emp-vac" class="section">
                                         <h1>4. Vacation</h1>
@@ -4104,6 +4104,7 @@
                         </div>
 
                         <!-- ADMIN TAB -->
+                        ${isAdmin ? `
                         <div id="admin" class="tab-content">
                             <div class="content-area">
                                 <div class="sidebar">
@@ -4117,29 +4118,134 @@
                                     <div id="adm-roster" class="section">
                                         <h1>1. Roster Management</h1>
                                         <p>Go to <strong>Admin Settings > Manage Employees</strong> to add new staff.</p>
+                                        <ul>
+                                            <li><strong>Add Employee:</strong> Generates a unique username/password automatically.</li>
+                                            <li><strong>Hide from Roster:</strong> Use the "Hide" checkbox in the Edit screen to keep an employee active (for login) but hidden from the daily schedule.</li>
+                                            <li><strong>Archive:</strong> Removes employee from future schedules but keeps history.</li>
+                                        </ul>
                                     </div>
                                     <div id="adm-sched" class="section">
                                         <h1>2. Scheduling</h1>
+                                        <h2>Quick Assign</h2>
                                         <p>On the Calendar, click <strong>Quick Assign</strong> (top right). Select an employee and drag the "Regular" bubble to a day.</p>
-                                        <div class="visual-box">
-                                            <div style="display:inline-block; padding:10px; border:1px solid #ccc; background:white;">
-                                                Select Employee: <strong>John Doe</strong><br>
-                                                <span class="tag blue" style="cursor:grab;">Regular</span> ← Drag this
-                                            </div>
-                                        </div>
+                                        <h2>Managing Assignments</h2>
+                                        <p>Click any calendar cell to open the manager. You can add multiple employees, add notes, or delete assignments.</p>
+                                        <p><strong>RDO Override:</strong> If you try to assign to a non-work day (RDO), the system will block it. You must click the cell and select "Override" to force the assignment.</p>
                                     </div>
                                     <div id="adm-ot" class="section">
                                         <h1>3. Overtime Administration</h1>
                                         <p>Manage lists via the <strong>Overtime</strong> tile.</p>
+                                        <h2>Voluntary / Mandatory Lists</h2>
+                                        <p>Click "Manage Employees" inside the list view to add/remove eligible staff. Use the "Scratch" button to temporarily skip an employee.</p>
                                         <h2>Approving Signups</h2>
                                         <p>Go to the <strong>Signup Calendar</strong> and click the number bubble on a shift. Click <strong>Approve</strong> to assign the employee to the schedule automatically.</p>
+                                        <div class="visual-box">
+                                            Approving an OT signup automatically creates a "Voluntary Overtime" assignment on the main schedule.
+                                        </div>
                                     </div>
                                     <div id="adm-settings" class="section">
                                         <h1>4. Settings & Logs</h1>
+                                        <h2>System Logs</h2>
                                         <p>The <strong>System Logs</strong> (in Admin Settings) track every action. Owners can delete logs; Admins can only view.</p>
+                                        <h2>Locations</h2>
+                                        <p>Use <strong>Manage Locations</strong> to create separate schedules for different facilities. Each location has its own roster and schedule data.</p>
                                     </div>
                                 </div>
                             </div>
+                        </div>` : ''}
+                    </div>
+                </body>
+                </html>
+            `);
+            w.document.close();
+        }
+    </script>
+</body>
+</html>cript>
+</body>
+</html>                         Statuses: <span class="tag green">Approved</span> <span class="tag red">Declined</span> <span style="background:#f1f5f9; color:#94a3b8; padding:2px 8px; border-radius:4px; border:1px solid #cbd5e1;">Cancelled</span>
+                        <!-- ADMIN TAB -->
+                        ${isAdmin ? `
+                        <div id="admin" class="tab-content">
+                            <div class="content-area">
+                                <div class="sidebar">
+                                    <div class="sidebar-header">⚙️ Admin Menu</div>
+                                    <div class="nav-item" onclick="document.getElementById('adm-roster').scrollIntoView({behavior: 'smooth'})">1. Roster Management</div>
+                                    <div class="nav-item" onclick="document.getElementById('adm-sched').scrollIntoView({behavior: 'smooth'})">2. Scheduling</div>
+                                    <div class="nav-item" onclick="document.getElementById('adm-ot').scrollIntoView({behavior: 'smooth'})">3. Overtime Admin</div>
+                                    <div class="nav-item" onclick="document.getElementById('adm-settings').scrollIntoView({behavior: 'smooth'})">4. Settings & Logs</div>
+                                </div>
+                                <div class="scroll-content">
+                                    <div id="adm-roster" class="section">
+                                        <h1>1. Roster Management</h1>
+                                        <p>Go to <strong>Admin Settings > Manage Employees</strong> to add new staff.</p>
+                                        <ul>
+                                            <li><strong>Add Employee:</strong> Generates a unique username/password automatically.</li>
+                                            <li><strong>Hide from Roster:</strong> Use the "Hide" checkbox in the Edit screen to keep an employee active (for login) but hidden from the daily schedule.</li>
+                                            <li><strong>Archive:</strong> Removes employee from future schedules but keeps history.</li>
+                                        </ul>
+                                    </div>
+                                    <div id="adm-sched" class="section">
+                                        <h1>2. Scheduling</h1>
+                                        <h2>Quick Assign</h2>
+                                        <p>On the Calendar, click <strong>Quick Assign</strong> (top right). Select an employee and drag the "Regular" bubble to a day.</p>
+                                        <h2>Managing Assignments</h2>
+                                        <p>Click any calendar cell to open the manager. You can add multiple employees, add notes, or delete assignments.</p>
+                                        <p><strong>RDO Override:</strong> If you try to assign to a non-work day (RDO), the system will block it. You must click the cell and select "Override" to force the assignment.</p>
+                                    </div>
+                                    <div id="adm-ot" class="section">
+                                        <h1>3. Overtime Administration</h1>
+                                        <p>Manage lists via the <strong>Overtime</strong> tile.</p>
+                                        <h2>Voluntary / Mandatory Lists</h2>
+                                        <p>Click "Manage Employees" inside the list view to add/remove eligible staff. Use the "Scratch" button to temporarily skip an employee.</p>
+                                        <h2>Approving Signups</h2>
+                                        <p>Go to the <strong>Signup Calendar</strong> and click the number bubble on a shift. Click <strong>Approve</strong> to assign the employee to the schedule automatically.</p>
+                                        <div class="visual-box">
+                                            Approving an OT signup automatically creates a "Voluntary Overtime" assignment on the main schedule.
+                                        </div>
+                                    </div>
+                                    <div id="adm-settings" class="section">
+                                        <h1>4. Settings & Logs</h1>
+                                        <h2>System Logs</h2>
+                                        <p>The <strong>System Logs</strong> (in Admin Settings) track every action. Owners can delete logs; Admins can only view.</p>
+                                        <h2>Locations</h2>
+                                        <p>Use <strong>Manage Locations</strong> to create separate schedules for different facilities. Each location has its own roster and schedule data.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="vacation" class="section">
+                            <h1>5. Vacation Segments</h1>
+                            <p>Use the <strong>Vacation Segments</strong> tab to manage long-term leave. Creating a segment here automatically populates the main schedule.</p>
+                            <p><strong>Smart Filling:</strong> The system is smart enough to only assign vacation hours to scheduled work days, skipping RDOs automatically.</p>
+                        </div>
+
+                        <div id="admin" class="section">
+                            <h1>6. Admin Settings</h1>
+                            <p>Access global settings via the "Admin Settings" tile on the Home Screen.</p>
+                            <ul>
+                                <li><strong>System Logs:</strong> View a detailed audit trail of all actions (Login, Delete, Assign, etc.).</li>
+                                <li><strong>Manage Locations:</strong> Create and switch between different facility locations.</li>
+                            </ul>
+                        </div>
+                        </div>` : ''}
+                    </div>
+                </body>
+                </html>
+            `);
+            w.document.close();
+        }
+    </script>
+</body>
+</html>
+                        <div id="admin" class="section">
+                            <h1>6. Admin Settings</h1>
+                            <p>Access global settings via the "Admin Settings" tile on the Home Screen.</p>
+                            <ul>
+                                <li><strong>System Logs:</strong> View a detailed audit trail of all actions (Login, Delete, Assign, etc.).</li>
+                                <li><strong>Manage Locations:</strong> Create and switch between different facility locations.</li>
+                            </ul>
                         </div>
                     </div>
                 </body>
@@ -4149,4 +4255,41 @@
         }
     </script>
 </body>
+</html>
+                        <div id="admin" class="section">
+                            <h1>6. Admin Settings</h1>
+                            <p>Access global settings via the "Admin Settings" tile on the Home Screen.</p>
+                            <ul>
+                                <li><strong>System Logs:</strong> View a detailed audit trail of all actions (Login, Delete, Assign, etc.).</li>
+                                <li><strong>Manage Locations:</strong> Create and switch between different facility locations.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `);
+            w.document.close();
+        }
+    </script>
+</body>
+</html>                     <p><strong>Smart Filling:</strong> The system is smart enough to only assign vacation hours to scheduled work days, skipping RDOs automatically.</p>
+                        </div>
+
+                        <div id="admin" class="section">
+                            <h1>6. Admin Settings</h1>
+                            <p>Access global settings via the "Admin Settings" tile on the Home Screen.</p>
+                            <ul>
+                                <li><strong>System Logs:</strong> View a detailed audit trail of all actions (Login, Delete, Assign, etc.).</li>
+                                <li><strong>Manage Locations:</strong> Create and switch between different facility locations.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `);
+            w.document.close();
+        }
+    </script>
+</body>
+</html>
 </html>
