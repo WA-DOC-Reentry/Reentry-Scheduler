@@ -1835,8 +1835,6 @@
                         ${canManageAccounts && canViewThisAccount ? `<button class="action-bubble view" style="background:#f3e8ff; color:#6b21a8; border-color:#d8b4fe;" onclick="showEmployeeAccountModal('${e.id}')">Account</button>` : ''}
                         ${canEdit ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
                         ${canEdit ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
-                        ${canViewThisAccount ? `<button class="action-bubble edit" onclick="editEmployee('${e.id}')">Edit</button>` : ''}
-                        ${canViewThisAccount ? `<button class="action-bubble archive" onclick="archiveEmployee('${e.id}')">Archive</button>` : ''}
                     </td>
                 </tr>`; 
             }); 
@@ -2835,8 +2833,8 @@
 
         function showManageListEmployeesModal(listType) {
             // Ensure list is initialized
-            if(!currentData.overtimeLists[listType] || !currentData.overtimeLists[listType].length) {
-                 currentData.overtimeLists[listType] = getFullTimeEmployees().map(e=>e.id);
+            if(!currentData.overtimeLists[listType]) {
+                 currentData.overtimeLists[listType] = [];
             }
 
             let html = `<p style="margin-bottom:15px; color:#64748b; font-size:13px;">Select employees to include in the ${listType === 'voluntary' ? 'Voluntary' : 'Mandatory'} Overtime List.</p>
