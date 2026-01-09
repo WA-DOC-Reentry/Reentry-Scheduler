@@ -517,6 +517,41 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
+        let idleTimer;
+
+        function resetTimer() {
+            clearTimeout(idleTimer);
+            // 1800000 ms = 30 minutes. Change
+            this number to adjust the time.
+                idleTimer = setTimeout(() => {
+                    if (currentUser) {
+                        alert("Your session has
+            expired due to inactivity.");
+                            logout();
+                    }
+                }, 1800000);
+        }
+
+        // Attach the timer to user
+        interactions
+        window.onload = resetTimer;
+        window.onmousemove = resetTimer;
+        window.onmousedown = resetTimer;
+        window.onclick = resetTimer;
+        window.onkeydown = resetTimer;
+
+        document.addEventListener(
+        "visibilitychange", () =>
+        {
+            if (document.hidden) {
+                db.goOffline(); // Disconnects
+        from the server while the tab is hidden
+            } else {
+                db.goOnline();  // Reconnects
+        instantly when the user returns
+            }
+        });
+
         const ROLES = { OWNER: 'Owner', ADMIN: 'Admin', EMPLOYEE: 'Employee', GUEST: 'Guest' };
         let currentUser = null; // { id, name, role, ... }
         // --- Constants ---
@@ -826,14 +861,6 @@
         function performLogin() {
             const u = document.getElementById('loginUser').value;
             const p = document.getElementById('loginPass').value;
-            
-            // Master Admin Backdoor
-            if (u === 'admin' && p === 'admin') {
-                currentUser = { id: 'master', name: 'Master Admin', role: ROLES.OWNER };
-                updateLoginUI();
-                closeModal();
-                return;
-            }
 
             let foundEmp = null;
             let foundLocId = null;
@@ -4980,3 +5007,4 @@
     </script>
 </body>
 </html>
+
