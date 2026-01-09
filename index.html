@@ -826,14 +826,6 @@
         function performLogin() {
             const u = document.getElementById('loginUser').value;
             const p = document.getElementById('loginPass').value;
-            
-            // Master Admin Backdoor
-            if (u === 'admin' && p === 'admin') {
-                currentUser = { id: 'master', name: 'Master Admin', role: ROLES.OWNER };
-                updateLoginUI();
-                closeModal();
-                return;
-            }
 
             let foundEmp = null;
             let foundLocId = null;
@@ -4980,4 +4972,5 @@
     </script>
 </body>
 </html>
+
 
