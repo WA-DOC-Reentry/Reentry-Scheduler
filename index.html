@@ -2322,6 +2322,18 @@
                     // Keep if not this employee OR if date is strictly before archive date
                     return a.employeeId !== id || a.date < date;
                 });
+
+                // Remove future overtime signups
+                if (currentData.overtimeSignups) {
+                    currentData.overtimeSignups = currentData.overtimeSignups.filter(s => {
+                        return s.employeeId !== id || s.date < date;
+                    });
+                }
+                if (currentData.externalOvertimeSignups) {
+                    currentData.externalOvertimeSignups = currentData.externalOvertimeSignups.filter(s => {
+                        return s.employeeId !== id || s.date < date;
+                    });
+                }
                 renderRosterTables(); 
             }); 
         }
@@ -2857,9 +2869,10 @@
                 html += `<div style="padding:20px; text-align:center; color:#64748b; background:#f8fafc; border-radius:8px;">No volunteers yet.</div>`;
             } else {
                 // MODIFICATION: Added "Details" column
-                html += `<table><thead><tr><th>Name</th><th>Details</th><th>Status</th><th>Log</th><th>Actions</th></tr></thead><tbody>`; 
+                html += `<table><thead><tr><th>Name</th><th>Seniority</th><th>Details</th><th>Status</th><th>Log</th><th>Actions</th></tr></thead><tbody>`; 
                 signups.forEach(s => { 
                     const emp = getEmployeeFromAnywhere(s.employeeId); 
+                    const seniority = (emp && emp.seniorityDate) ? formatDate(emp.seniorityDate) : 'N/A';
                     const latestLog = s.contactLog && s.contactLog.length > 0 ? s.contactLog[s.contactLog.length-1] : null;
                     
                     // MODIFICATION: Use Bubble Style for Logs
@@ -2907,11 +2920,10 @@
                         detailsContent = `<button class="action-bubble edit" onclick="editOTSignupDetails('${s.id}')">+ Details</button>`;
                     }
 
-                    const seniorityDisplay = (emp && emp.seniorityDate) ? `<span style="font-size:11px; color:#64748b; font-weight:normal; margin-left:4px;">(${formatDate(emp.seniorityDate)})</span>` : '';
-
                     const canApprove = (role === ROLES.OWNER || role === ROLES.ADMIN);
                     html += `<tr>
-                        <td class="${nameClass}">${emp.name}${seniorityDisplay}</td>
+                        <td class="${nameClass}">${emp.name}</td>
+                        <td>${seniority}</td>
                         <td>${detailsContent}</td>
                         <td><span class="status-badge" style="${statusStyle}">${s.status}</span></td>
                         <td style="max-width:250px;">${logSummary}</td>
@@ -3110,7 +3122,7 @@
                  }
              }
 
-             if(applyAssignment(s.employeeId, targetSchedId, dateStr, dateStr, ASSIGNMENT_TYPES.OVERTIME_V)) {
+             if(applyAssignment(s.employeeId, targetSchedId, dateStr, dateStr, ASSIGNMENT_TYPES.OVERTIME_V, s.notes || '')) {
                  s.status = 'approved';
                  
                  // Log approval
@@ -3786,7 +3798,7 @@
             if (signups.length === 0) {
                 html += `<div style="padding:20px; text-align:center; color:#64748b; background:#f8fafc; border-radius:8px;">No external volunteers.</div>`;
             } else {
-                html += `<table><thead><tr><th>Name</th><th>Seniority</th><th>Signup Time</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
+                html += `<table><thead><tr><th>Name</th><th>Seniority</th><th>Details</th><th>Signup Time</th><th>Status</th><th>Log</th><th>Actions</th></tr></thead><tbody>`;
                 signups.forEach(s => {
                     const emp = getEmployeeFromAnywhere(s.employeeId);
                     const signupTime = s.signupTimestamp ? new Date(s.signupTimestamp).toLocaleString() : 'N/A';
@@ -3796,11 +3808,40 @@
                                       s.status === 'declined' ? 'background:#fef2f2; color:#b91c1c;' : 
                                       s.status === 'cancelled' ? 'background:#f1f5f9; color:#94a3b8;' : 'background:#fff7ed; color:#c2410c;';
 
+                    const latestLog = s.contactLog && s.contactLog.length > 0 ? s.contactLog[s.contactLog.length-1] : null;
+                    let logSummary;
+                    if (latestLog) {
+                        const timeStr = new Date(latestLog.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                        const userStr = latestLog.user ? ` (${latestLog.user})` : '';
+                        logSummary = `<div class="log-bubble" onclick="showExternalContactLogModal('${s.id}')" title="Click to view full log">
+                            <span class="log-bubble-time">${timeStr}</span>
+                            <span class="log-bubble-text">${latestLog.message}${userStr}</span>
+                        </div>`;
+                    } else {
+                        logSummary = `<div class="log-bubble empty" onclick="showExternalContactLogModal('${s.id}')" title="Add Log Entry">No Logs</div>`;
+                    }
+
+                    const phoneDisplay = s.phone ? `<div style="font-size:11px; color:#475467; margin-bottom:2px;">📞 ${s.phone}</div>` : '';
+                    const noteDisplay = s.notes ? `<div style="font-size:11px; color:#64748b; font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">📝 ${s.notes}</div>` : '';
+                    
+                    let detailsContent;
+                    if (phoneDisplay || noteDisplay) {
+                        detailsContent = `<div style="cursor:pointer; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:4px 8px; min-width:120px; max-width:220px;" 
+                                            onclick="editExternalOTSignupDetails('${s.id}')" 
+                                            title="Click to View/Edit Full Details">
+                                            ${phoneDisplay}${noteDisplay}
+                                           </div>`;
+                    } else {
+                        detailsContent = `<button class="action-bubble edit" onclick="editExternalOTSignupDetails('${s.id}')">+ Details</button>`;
+                    }
+
                     html += `<tr>
                         <td>${emp.name}</td>
                         <td>${seniority}</td>
+                        <td>${detailsContent}</td>
                         <td>${signupTime}</td>
                         <td><span class="status-badge" style="${statusStyle}">${s.status}</span></td>
+                        <td style="max-width:250px;">${logSummary}</td>
                         <td>
                             <div style="display:flex; gap:5px;">
                                 ${s.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="approveExternalOT('${s.id}', '${dateStr}')">Approve</button>` : ''}
@@ -3813,6 +3854,80 @@
                 html += `</tbody></table>`;
             }
             createModal('External Volunteers', html, '900px');
+        }
+
+        function editExternalOTSignupDetails(signupId) {
+            const s = currentData.externalOvertimeSignups.find(x => x.id === signupId);
+            if(!s) return;
+            const emp = getEmployeeFromAnywhere(s.employeeId);
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const canEdit = (role === ROLES.OWNER || role === ROLES.ADMIN || (role === ROLES.EMPLOYEE && currentUser.id === s.employeeId));
+            const disabledAttr = canEdit ? '' : 'disabled';
+            const title = canEdit ? `Edit Details: ${emp.name}` : `View Details: ${emp.name}`;
+            
+            createModal(title, `
+                <div class="form-group"><label>Phone Number</label><input type="text" id="editExtOTPhone" value="${s.phone || ''}" placeholder="e.g. 555-0123" ${disabledAttr}></div>
+                <div class="form-group"><label>Signup Note</label><textarea id="editExtOTNote" rows="5" placeholder="Enter full details here..." style="width:100%; resize:vertical; padding:8px; border:1px solid var(--border-color); border-radius:6px;" ${disabledAttr}>${s.notes || ''}</textarea></div>
+                <div class="action-buttons">
+                    <button class="btn btn-secondary" onclick="showExternalOTVolunteersModal('${s.shiftId}', '${s.date}')">Close</button>
+                    ${canEdit ? `<button class="btn btn-primary" onclick="saveExternalOTSignupDetails('${signupId}')">Save Details</button>` : ''}
+                </div>
+            `, '500px');
+        }
+
+        function saveExternalOTSignupDetails(signupId) {
+            const s = currentData.externalOvertimeSignups.find(x => x.id === signupId);
+            if(s) {
+                s.phone = document.getElementById('editExtOTPhone').value;
+                s.notes = document.getElementById('editExtOTNote').value;
+                showExternalOTVolunteersModal(s.shiftId, s.date);
+            }
+        }
+
+        function showExternalContactLogModal(signupId) {
+            const signup = currentData.externalOvertimeSignups.find(s => s.id === signupId);
+            if (!signup) return;
+            const emp = getEmployeeFromAnywhere(signup.employeeId);
+            const role = currentUser ? currentUser.role : ROLES.GUEST;
+            const canEdit = (role === ROLES.OWNER || role === ROLES.ADMIN);
+            
+            let logHtml = `<div id="logEntries" style="max-height:300px; overflow-y:auto; background:#f8fafc; padding:15px; border-radius:8px; margin-bottom:15px; border:1px solid #e2e8f0;">`;
+            if (!signup.contactLog || signup.contactLog.length === 0) {
+                logHtml += `<p style="color:#94a3b8; text-align:center;">No log entries.</p>`;
+            } else {
+                signup.contactLog.forEach(log => {
+                    const userStr = log.user ? ` by ${log.user}` : '';
+                    logHtml += `<div style="margin-bottom:10px; border-bottom:1px solid #e2e8f0; padding-bottom:5px;">
+                        <div style="display:flex; justify-content:space-between; font-size:10px; color:#64748b;">
+                            <strong>${new Date(log.timestamp).toLocaleString()}</strong>
+                            <strong>${new Date(log.timestamp).toLocaleString()}${userStr}</strong>
+                        </div>
+                        <div style="font-size:13px; color:#334155;">${log.message}</div>
+                    </div>`;
+                });
+            }
+            logHtml += `</div>`;
+            
+            if (canEdit) {
+                logHtml += `<div class="form-group"><label>Add Log Entry</label><input type="text" id="newLogEntry" placeholder="e.g. Called, left voicemail"></div>`;
+            }
+            
+            logHtml += `<div class="action-buttons">
+                    ${canEdit ? `<button class="btn btn-primary" onclick="addExternalContactLog('${signupId}')">Add Entry</button>` : ''}
+                    <button class="btn btn-secondary" onclick="showExternalOTVolunteersModal('${signup.shiftId}', '${signup.date}')">Back</button>
+                </div>`;
+            
+            createModal(`Log: ${emp ? emp.name : 'Unknown'}`, logHtml, '500px');
+        }
+
+        function addExternalContactLog(signupId) {
+            const msg = document.getElementById('newLogEntry').value;
+            if (!msg) return;
+            const signup = currentData.externalOvertimeSignups.find(s => s.id === signupId);
+            if (!signup.contactLog) signup.contactLog = [];
+            const user = currentUser ? currentUser.name : 'System';
+            signup.contactLog.push({ timestamp: new Date().toISOString(), message: msg, user: user });
+            showExternalContactLogModal(signupId);
         }
 
         function approveExternalOT(id, dateStr) {
@@ -3828,6 +3943,9 @@
             // Apply assignment (Note: applyAssignment handles non-local employees by NOT scratching them)
             if (applyAssignment(s.employeeId, targetSchedId, dateStr, dateStr, ASSIGNMENT_TYPES.OVERTIME_V)) {
                 s.status = 'approved';
+                if(!s.contactLog) s.contactLog = [];
+                const user = currentUser ? currentUser.name : 'System';
+                s.contactLog.push({ timestamp: new Date().toISOString(), message: "Approved and assigned.", user: user });
                 logAction('Approve External OT', `Approved external OT on ${dateStr}`, getEmployeeFromAnywhere(s.employeeId));
                 showExternalOTVolunteersModal(s.shiftId, dateStr);
                 updateExternalOTView();
@@ -3838,6 +3956,9 @@
             const s = currentData.externalOvertimeSignups.find(x => x.id === id);
             if (s) {
                 s.status = 'declined'; // No scratch logic for external
+                if(!s.contactLog) s.contactLog = [];
+                const user = currentUser ? currentUser.name : 'System';
+                s.contactLog.push({ timestamp: new Date().toISOString(), message: "Declined.", user: user });
                 logAction('Decline External OT', `Declined external OT`, getEmployeeFromAnywhere(s.employeeId));
                 showExternalOTVolunteersModal(s.shiftId, s.date);
                 updateExternalOTView();
@@ -3848,6 +3969,9 @@
             const s = currentData.externalOvertimeSignups.find(x => x.id === id);
             if (s) {
                 s.status = 'cancelled';
+                if(!s.contactLog) s.contactLog = [];
+                const user = currentUser ? currentUser.name : 'System';
+                s.contactLog.push({ timestamp: new Date().toISOString(), message: "Cancelled.", user: user });
                 logAction('Cancel External OT', `Cancelled external OT`, getEmployeeFromAnywhere(s.employeeId));
                 showExternalOTVolunteersModal(s.shiftId, s.date);
                 updateExternalOTView();
@@ -4822,10 +4946,13 @@
             };
             
             // 1. System Logs
-            addLogs(currentData.logs, 'System', 'General');
-            
-            // 2. Employee Logs
-            currentData.employees.forEach(e => addLogs(e.logs, 'Employee', e.name));
+            if (currentData.logs && Array.isArray(currentData.logs)) {
+                currentData.logs.forEach(l => {
+                    if (l.action.includes('Shift') || l.action.includes('Schedule')) {
+                        allLogs.push({ ...l, source: 'System', sourceName: 'General', _ref: l, _parent: currentData.logs });
+                    }
+                });
+            }
             
             // 3. Shift Logs
             currentData.shifts.forEach(s => addLogs(s.logs, 'Shift', s.name));
@@ -4871,7 +4998,6 @@
                         <select id="logFilterType" onchange="updateLogView()">
                             <option value="All" ${filterType === 'All' ? 'selected' : ''}>All Sources</option>
                             <option value="System" ${filterType === 'System' ? 'selected' : ''}>System (General)</option>
-                            <option value="Employee" ${filterType === 'Employee' ? 'selected' : ''}>Employees</option>
                             <option value="Shift" ${filterType === 'Shift' ? 'selected' : ''}>Shifts</option>
                             <option value="Schedule" ${filterType === 'Schedule' ? 'selected' : ''}>Schedules</option>
                         </select>
@@ -4972,5 +5098,3 @@
     </script>
 </body>
 </html>
-
-
